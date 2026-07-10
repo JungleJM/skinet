@@ -1,19 +1,19 @@
-# Skills + Tenet + LocalAGI Harness Build Plan
+# Skills + Provider-Neutral Harness Build Plan v0.3
 
 ## Purpose
 
 This document defines a gradual build-out of a development harness over:
 
 - **Skills** for idea interrogation, PRD creation, tracer-bullet issue decomposition, and later respec workflows.
-- **Gitea** as the canonical source of truth for feature intent, tracer state, dependencies, and merge history.
-- **A thin deterministic harness controller** for work eligibility, state transitions, Tenet artifact preparation, policy checks, proof gates, PR authorization, and safe merge decisions.
-- **Tenet** for implementation and semantic evaluation of one frozen tracer contract at a time.
-- **LocalAGI** for the reusable agent runtime: agent definitions, tool calling, Skills access, MCP connections, execution loops, status streaming, and operator UI.
+- **An authority provider** as the canonical source of truth for feature intent, tracer state, dependencies, PRs, and merge history. The first adapter is Gitea/Forgejo-compatible; GitHub should be possible later without changing controller policy.
+- **A thin deterministic harness controller** for work eligibility, state transitions, execution artifact preparation, policy checks, proof gates, PR authorization, and safe merge decisions.
+- **An execution provider** for implementation and semantic evaluation of one frozen tracer contract at a time. The first adapter is Tenet; a future guarded development/review engine should be swappable behind the same controller-owned run contract.
+- **LocalAGI** only as an optional operator surface and agent adapter when it makes the workflow easier. The harness must not be built to LocalAGI's internal specs.
 - **LocalAI** for later local-model serving and role-based model routing across Oracle, Denbuntu, JMapple, or other workers.
 - **LocalRecall** only as an optional advisory knowledge and memory layer, never as the source of current issue state or execution authority.
 - **Codex/Claude first**, with local LLMs introduced only after the workflow itself is reliable.
 
-The main goal is to avoid building a custom multi-agent platform when an established runtime can provide that commodity layer, while retaining strict ownership of the parts that determine safety and correctness.
+The main goal is to build the smallest deterministic harness that can run without any agent platform, while leaving a narrow optional adapter for LocalAGI or another runtime to request the same operations.
 
 The harness must therefore separate:
 
@@ -25,9 +25,15 @@ deterministic workflow policy and project authority
 
 Each stage adds one layer of complexity only after the prior layer works manually.
 
-**Tenet compatibility revision:** Skills/Gitea own specification and decomposition. The controller generates Tenet-compatible shim artifacts from a frozen agent issue and registers exactly one Tenet development job with exact artifact paths. Tenet must not re-interview, re-spec, or create a competing cross-issue DAG.
+**Authority-provider revision:** the controller must not hard-code Gitea as the domain model. It should speak in provider-neutral concepts such as feature issue, tracer issue, labels/status, dependency edges, branch, PR, comments, and audit links. Gitea/Forgejo is the first adapter because it is what the local environment uses. GitHub or another forge should require an adapter and field-mapping change, not a workflow-policy rewrite.
 
-**LocalAGI integration revision:** LocalAGI replaces the custom agent-loop, tool-registry, model-provider, skill-delivery, and runtime-observability work that would otherwise accumulate inside the runner. It does not replace Gitea authority, deterministic dependency resolution, gate scripts, retry budgets, or merge policy.
+**Execution-provider revision:** the controller must not hard-code Tenet as the domain model. It should speak in provider-neutral concepts such as frozen contract, run, development job, evaluation job, artifact bundle, proof bundle, critic result, and retry budget. Tenet is the first adapter because it provides useful job/artifact/eval primitives. A future execution engine with strong guardrails and critics should be able to replace Tenet if it can consume the same frozen contract and return the same structured run evidence.
+
+**v0.3 replaceability revision:** provider replacement is now an explicit design goal, not just a desirable side effect. Authority-provider replacement means Gitea/Forgejo, GitHub, or another forge can back the same `AuthorityProvider` interface. Execution-provider replacement means Tenet, or a future guarded development/review engine, can back the same `ExecutionProvider` interface. The controller owns workflow policy; providers own translation to concrete APIs, artifact formats, and result schemas.
+
+**Tenet compatibility revision:** Skills plus the authority provider own specification and decomposition. The controller generates Tenet-compatible shim artifacts from a frozen agent issue and registers exactly one Tenet development job with exact artifact paths. Tenet must not re-interview, re-spec, or create a competing cross-issue DAG.
+
+**LocalAGI optional-adapter revision:** LocalAGI may provide a convenient UI, agent loop, MCP client, status view, and model/tool orchestration. It must not define controller schemas, run state, workflow semantics, artifact formats, retry behavior, or merge policy. If LocalAGI is deleted, the CLI and controller must still complete the same workflow.
 
 **IaC handoff goal:** the architecture and stages are written so an infrastructure-as-code system can later map each service, configuration, secret, volume, network path, model endpoint, health check, and deployment dependency into reproducible infrastructure.
 
@@ -44,16 +50,16 @@ Planning plane
   Skills + frontier model
         ↓
 Authority plane
-  Gitea epic/tracer issues and feature branches
+  authority provider: Gitea/Forgejo first; GitHub or another forge later
         ↓
-Policy plane
+Policy and operation plane
   harness-controller / harnessctl
         ↓
-Agent control plane
-  LocalAGI agents, Skills, MCP tools, runtime UI
+Optional operator adapter
+  LocalAGI agents, MCP tools, runtime UI, or any later equivalent
         ↓
 Execution and evaluation plane
-  Tenet one-job run + deterministic gates + Tenet critics
+  execution provider: Tenet first; another guarded dev/eval engine later
         ↓
 Inference plane
   frontier APIs initially; LocalAI endpoints later
@@ -65,57 +71,195 @@ Advisory knowledge plane
 The key operational rule is:
 
 ```text
-LocalAGI may request actions.
+Humans, scripts, n8n, LocalAGI, or another adapter may request actions.
 The harness controller decides whether those actions are valid.
-Gitea records the canonical result.
+The authority provider records the canonical result.
 ```
 
-LocalAGI should normally call the controller through a narrow MCP or REST interface. The same controller operations should remain available through a CLI so every action can be tested without an agent.
+The CLI is the primary interface. LocalAGI, if used, calls the controller through a thin MCP or REST adapter that maps one-for-one onto CLI/controller operations. No workflow behavior should exist only inside LocalAGI agent definitions, conversations, or memory.
 
 ### Component responsibility map
 
 | Component | Primary responsibility | Must not become |
 |---|---|---|
 | Skills | Interview, PRD, tracer decomposition, respec | Mutable runtime state store |
-| Gitea | Canonical intent, status, dependencies, PRs, merge history | Agent scratchpad |
+| Authority provider | Canonical intent, status, dependencies, PRs, merge history | Agent scratchpad or provider-specific policy engine |
+| Gitea/Forgejo adapter | First authority-provider implementation | Controller domain model |
+| GitHub adapter | Possible later authority-provider implementation | Reason to rewrite workflow policy |
 | `harness-controller` | Eligibility, state machine, gates, authorization, audit links | General-purpose LLM framework |
-| LocalAGI | Agent loops, tools, Skills access, MCP, runtime UI, model assignment | Canonical workflow state or policy authority |
-| Tenet | Execute/evaluate one frozen tracer attempt | Feature planner or cross-issue scheduler |
+| LocalAGI | Optional agent/operator UI over controller operations | Required dependency, canonical workflow state, artifact format owner, or policy authority |
+| Execution provider | Execute/evaluate one frozen tracer attempt | Feature planner or cross-issue scheduler |
+| Tenet adapter | First execution-provider implementation | Controller domain model |
 | LocalAI | Serve local models behind stable APIs | Workflow state manager |
 | LocalRecall | Search documentation and historical context | Source of current issue/spec truth |
 | n8n | Triggers, notifications, external workflow glue | Canonical scheduler or merge authority |
 
+### Provider-neutral domain model
+
+Use provider-neutral names inside controller schemas, run ledgers, frozen snapshots, and policy code.
+
+| Controller concept | Gitea/Forgejo adapter | GitHub adapter | Notes |
+|---|---|---|---|
+| feature issue | Gitea issue | GitHub issue | Planning context / epic-like issue |
+| tracer issue | Gitea issue | GitHub issue | One vertical implementation slice |
+| issue key | `{provider, owner, repo, number}` | `{provider, owner, repo, number}` | Never parse provider URLs for core logic |
+| status | labels such as `agent_status/ready` | labels such as `agent_status/ready` | Use a configured status-label mapping |
+| dependency edge | issue dependency or markdown fallback | issue relationship/sub-issue/blocking fallback | Adapter normalizes to `blocked_by` / `blocks` |
+| PR | Gitea pull request | GitHub pull request | Controller policy owns target branch validation |
+| audit link | issue comment | issue comment | Adapter writes controller-owned structured summaries |
+| branch | Git branch | Git branch | Git operations can remain provider-neutral where possible |
+
+Provider URLs such as `gitea://...` or GitHub issue URLs are external references. They should be stored for audit and operator convenience, but controller logic should use normalized issue keys.
+
+Recommended normalized issue key:
+
+```json
+{
+  "provider": "gitea",
+  "host": "https://gitea.local",
+  "owner": "owner",
+  "repo": "repo",
+  "number": 123
+}
+```
+
+### AuthorityProvider interface
+
+The controller should depend on one deep authority interface, with Gitea/Forgejo and GitHub as adapters behind it.
+
+Minimum interface:
+
+```text
+AuthorityProvider
+  get_feature(feature_ref) -> FeatureRecord
+  list_tracers(feature_ref) -> TracerRecord[]
+  get_tracer(issue_key) -> TracerRecord
+  list_dependencies(issue_key) -> DependencyGraph
+  set_status(issue_key, status, audit) -> ProviderMutationResult
+  create_or_update_snapshot_ref(issue_key, snapshot_ref, audit) -> ProviderMutationResult
+  create_pr(run_id, source_branch, target_branch, body) -> PullRequestRecord
+  merge_pr_if_provider_checks_allow(pr_key) -> ProviderMutationResult
+  add_audit_comment(target_key, structured_summary) -> ProviderMutationResult
+```
+
+The interface owns provider differences:
+
+- Gitea/Forgejo native issue dependencies versus markdown fallback.
+- GitHub labels, linked issues, sub-issues, task lists, or markdown fallback.
+- Label IDs versus label names.
+- PR terminology and merge APIs.
+- URL formats and authentication.
+
+The controller owns workflow policy:
+
+- which statuses are valid
+- whether an issue is eligible
+- whether a dependency counts as satisfied
+- whether a PR target is allowed
+- whether a merge is allowed
+- how stale snapshots are rejected
+
+### ExecutionProvider interface
+
+The controller should depend on one deep execution interface, with Tenet as the first adapter behind it.
+
+Minimum interface:
+
+```text
+ExecutionProvider
+  prepare_artifacts(run_contract) -> ArtifactBundle
+  register_dev_job(run_contract, artifact_bundle) -> ExecutionJob
+  start_dev_job(job_key) -> ExecutionStartResult
+  get_job_result(job_key) -> ExecutionResult
+  start_eval(run_contract, artifact_bundle, implementation_ref) -> EvaluationJob
+  get_eval_result(eval_key) -> EvaluationResult
+```
+
+The interface owns execution-engine differences:
+
+- Tenet job primitives and artifact path requirements.
+- A future engine's work-order format.
+- A future engine's critic/evaluation result format.
+- Engine-specific retry knobs.
+- Engine-specific log locations.
+
+The controller owns run policy:
+
+- one frozen tracer contract per run
+- retry budget
+- required proof gates
+- state transitions
+- branch and merge policy
+- failure classification after structured evidence exists
+
+If a future execution engine cannot accept an externally frozen contract, exact paths, forbidden paths, required commands, and a one-tracer work order, it is not a drop-in execution provider. It may still be useful behind a custom adapter, but the adapter must prove it preserves the same controller contract.
+
 ### Source-of-truth rule
 
-Do **not** let truth migrate from PRD to Markdown to PR to Tenet run artifacts.
+Do **not** let truth migrate from PRD to Markdown to PR to execution run artifacts.
 
 Instead:
 
 ```text
-Gitea issue = canonical intent and state
+authority-provider issue = canonical intent and state
 docs/agent-issues/ISSUE-N.vX.md = frozen execution snapshot for one attempt/spec version
-.tenet/runs/<run>/ = implementation attempt and evidence
-Gitea PR = proposed code merge
+execution-provider run directory = implementation attempt and evidence
+authority-provider PR = proposed code merge
 feature branch = auto-merge target after gates pass
 main = human-only merge target
 ```
+
+For the first adapter set, this concretely means:
+
+```text
+Gitea/Forgejo issue = canonical intent and state
+.tenet/runs/<run>/ = Tenet implementation attempt and evidence
+Gitea/Forgejo PR = proposed code merge
+```
+
+### Portable configuration ownership
+
+Keep portable system definition in your own Git-controlled formats:
+
+| Configuration | Owner |
+|---|---|
+| Prompts and role instructions | Git-controlled harness config |
+| Skills and referenced resources | Git-controlled Skill packages |
+| Agent profiles | Git-controlled adapter-neutral YAML/JSON |
+| Model-routing rules | Git-controlled model profile config |
+| Controller schemas and policy rules | Git-controlled controller config |
+| MCP/REST tool schemas | Generated from or versioned with controller schemas |
+| Permissions and capability manifests | Git-controlled least-privilege manifests |
+| Workflow state | Authority-provider labels/comments plus controller run ledger |
+| Secrets | Secret manager or environment injection, never Git |
+| LocalAGI UI state/conversations | Noncanonical convenience state |
+| LocalRecall indexes | Rebuildable advisory cache |
+
+If a prompt, profile, permission, routing rule, or state transition exists only inside LocalAGI's UI, the design is not portable yet.
 
 ### Artifact roles
 
 | Artifact | Role | Authority |
 |---|---|---|
-| Gitea epic / PRD issue | Feature-level context and intent | Canonical planning context |
-| Gitea tracer issue | One vertical slice to build | Canonical implementation intent |
-| `docs/agent-issues/ISSUE-N.vX.md` | Frozen execution contract generated from Gitea | Authority for one Tenet attempt |
+| Authority-provider feature issue | Feature-level context and intent | Canonical planning context |
+| Authority-provider tracer issue | One vertical slice to build | Canonical implementation intent |
+| `docs/agent-issues/ISSUE-N.vX.md` | Frozen execution contract generated from the authority provider | Authority for one execution attempt |
+| Execution-provider artifacts | Engine-specific export of the frozen agent issue | Compatibility shim, not canonical truth |
+| Execution-provider run path | Run logs, proof, preflight, critic results | Evidence only |
+| Authority-provider PR | Proposed code change | Merge vehicle |
+| `docs/features/<feature>.md` | Completed feature summary | Historical summary |
+| LocalAGI conversation/state | Runtime context and operator visibility | Advisory/transient only |
+| LocalRecall collections | Searchable doctrine and historical summaries | Advisory only |
+
+For the first Tenet adapter, execution-provider artifacts are:
+
+| Tenet artifact | Role | Authority |
+|---|---|---|
 | `.tenet/runs/<run>/spec.md` | Tenet-compatible export of the frozen agent issue | Compatibility shim, not canonical truth |
 | `.tenet/runs/<run>/scenarios.md` | Acceptance criteria, anti-scenarios, proof expectations | Compatibility shim, not canonical truth |
 | `.tenet/runs/<run>/harness.md` | Required commands, forbidden paths, gates, merge policy | Compatibility shim, not canonical truth |
 | `.tenet/runs/<run>/decomposition.md` | One-node Tenet DAG for the current tracer | Compatibility shim, not cross-issue planning |
 | `.tenet/runs/<run>/` | Run logs, proof, preflight, critic results | Evidence only |
-| Gitea PR | Proposed code change | Merge vehicle |
-| `docs/features/<feature>.md` | Completed feature summary | Historical summary |
-| LocalAGI conversation/state | Runtime context and operator visibility | Advisory/transient only |
-| LocalRecall collections | Searchable doctrine and historical summaries | Advisory only |
 
 ### Default merge policy
 
@@ -130,30 +274,86 @@ This is the most important compatibility and safety rule.
 
 ```text
 Skills = interview, PRD creation, tracer decomposition, respec
-Gitea = canonical planning state and cross-issue dependency graph
+authority provider = canonical planning state and cross-issue dependency graph
+Gitea/Forgejo adapter = first authority-provider implementation
 agent-issue snapshot = frozen execution contract for one attempt
 harness-controller = state machine, policy, exact artifact generation, gates, authorization
-LocalAGI = agent runtime that requests controller operations through narrow tools
-Tenet = execute one frozen contract and evaluate the result
+CLI = primary human and automation interface to the controller
+LocalAGI = optional adapter that requests controller operations through narrow tools
+execution provider = execute one frozen contract and evaluate the result
+Tenet adapter = first execution-provider implementation
 LocalAI = model-serving layer selected by agent role
 LocalRecall = optional advisory retrieval over stable documentation and history
 ```
 
-Once a Skills-generated Gitea tracer issue exists:
+Once a Skills-generated tracer issue exists in the authority provider:
 
 - Tenet must not re-interview, re-spec, or re-decompose it.
 - LocalAGI memory must not be used to infer current issue status.
+- LocalAGI agent definitions must not contain workflow rules that are absent from the controller contract.
 - LocalRecall must not be used to locate a likely execution contract when an exact path exists.
-- The agent must query Gitea or the controller for current state before every state-changing action.
+- The agent must query the authority provider through the controller for current state before every state-changing action.
 - The controller must reject actions that are invalid for the current state, even if an agent requests them.
 
-For this harness, Tenet's internal job DAG remains deliberately trivial:
+For the first Tenet adapter, Tenet's internal job DAG remains deliberately trivial:
 
 ```text
-one Gitea tracer issue = one frozen agent-issue snapshot = one Tenet registered dev job
+one authority-provider tracer issue = one frozen agent-issue snapshot = one Tenet registered dev job
 ```
 
-Gitea owns all cross-issue dependencies through `blocked_by` and `blocks`. Tenet owns only the execution/evaluation state for the single current attempt. LocalAGI owns neither.
+The authority provider owns all cross-issue dependencies through normalized `blocked_by` and `blocks` edges. Tenet owns only the execution/evaluation state for the single current attempt. LocalAGI owns neither.
+
+### LocalAGI deletion test
+
+Before any LocalAGI integration is considered accepted, the workflow must pass this test:
+
+```text
+Stop LocalAGI.
+Disable the LocalAGI adapter.
+Run the same feature workflow through harnessctl.
+Confirm issue selection, snapshot generation, Tenet registration, gates, PR creation, and state updates still work.
+```
+
+If this test fails, the design has accidentally made LocalAGI part of the harness instead of an optional operator surface.
+
+### Boring Bridge strategy
+
+Every external runtime should cross the same boring bridge:
+
+```text
+agent/runtime/client -> MCP or REST adapter -> harness-controller -> structured controller JSON
+```
+
+LocalAGI is one possible client of this bridge. LangGraph, PydanticAI, Codex, Claude, a small custom loop, n8n, or a plain shell script should be able to call the same controller operations without changing the controller policy, frozen snapshots, run contracts, PR bodies, or merge policy. Swapping Gitea for GitHub or Tenet for another execution engine should happen behind provider adapters.
+
+The bridge rules are:
+
+1. The controller owns business logic and workflow state.
+2. MCP or REST tools are thin pass-through wrappers.
+3. Tools do not interpret policy, maintain hidden state, or rewrite controller decisions.
+4. Tools return controller-owned structured results, not agent-specific state.
+5. Adapter prompts may explain how to use the tools, but they must not define workflow semantics.
+
+Recommended tool response shape:
+
+```json
+{
+  "operation": "run_preflight",
+  "status": "policy_denied",
+  "exit_code": 1,
+  "run_id": "issue-123-attempt-001",
+  "controller_state": "running",
+  "policy_denial": {
+    "code": "STALE_CONTRACT",
+    "message": "Snapshot v1 is stale; current snapshot is v2."
+  },
+  "stdout": "",
+  "stderr": "",
+  "artifacts": []
+}
+```
+
+Avoid returning only free-form raw output. Agents can summarize raw text, but they should not have to infer canonical state from it.
 
 ### Deterministic controller contract
 
@@ -177,10 +377,10 @@ MCP or REST:
   inspect_feature
   prepare_next
   get_run_state
-  start_tenet_dev
+  start_dev
   run_preflight
   run_proof
-  start_tenet_eval
+  start_eval
   classify_run
   create_pr_if_allowed
   merge_pr_if_policy_allows
@@ -192,22 +392,30 @@ Every mutating operation should:
 2. Validate the requested transition.
 3. Perform only the narrow operation requested.
 4. Emit structured JSON.
-5. Persist an audit link or comment in Gitea when state changes.
+5. Persist an audit link or comment through the authority provider when state changes.
 6. Be idempotent where practical.
 
 Example policy rejections:
 
 ```text
-start_tenet_eval before preflight passed → INVALID_STATE
+start_eval before preflight passed → INVALID_STATE
 retry after retry budget exhausted → BUDGET_EXCEEDED
 merge before required critics passed → POLICY_DENIED
 merge into main through automation → POLICY_DENIED
 use stale snapshot version → STALE_CONTRACT
 ```
 
-### LocalAGI tool boundary
+### Optional LocalAGI adapter boundary
 
-LocalAGI agents should receive narrow, capability-limited tools. Avoid exposing unrestricted shell, unrestricted Gitea administration, or a raw merge command to the main operator agent.
+If LocalAGI is used, agents should receive narrow, capability-limited tools. Avoid exposing unrestricted shell, unrestricted authority-provider administration, raw execution-provider job primitives, or a raw merge command to the main operator agent.
+
+The LocalAGI adapter should be deliberately boring:
+
+```text
+LocalAGI tool call -> controller operation -> structured controller JSON
+```
+
+Do not translate controller state into a LocalAGI-specific state machine. Do not require LocalAGI-specific metadata in authority-provider issues, agent-issue snapshots, execution artifacts, PR bodies, feature summaries, prompts, or agent profiles.
 
 Prefer:
 
@@ -230,7 +438,7 @@ harness_operator:
     - inspect_feature
     - prepare_next
     - get_run_state
-    - start_tenet_dev
+    - start_dev
   merge_permission: none
 
 failure_triage:
@@ -253,13 +461,21 @@ Later, the operator may receive `create_pr_if_allowed` and `merge_pr_if_policy_a
 
 ### LocalAI boundary
 
-LocalAI should be introduced as an inference service, not as a new workflow manager.
+LocalAI should be introduced as an inference service behind a model gateway, not as a new workflow manager.
 
-Recommended deployment model:
+The harness should route through its own model profile contract:
 
 ```text
-LocalAGI agent role → logical model profile → LocalAI endpoint/model
+agent role -> logical model profile -> model gateway -> provider adapter
 ```
+
+The first gateway implementation can be simple and OpenAI-compatible:
+
+```text
+/v1/chat/completions or /v1/responses
+```
+
+But the controller and snapshots should record logical profiles, not hard-code LocalAI internals. The same profile should be swappable between LocalAI, a frontier provider, Codex, Claude, or another OpenAI-compatible server if the run policy allows it.
 
 Prefer job-level routing across machines:
 
@@ -272,7 +488,86 @@ frontier provider = final or high-risk critic
 
 Do not begin with distributed model sharding across all machines. First prove that each role can call one stable endpoint and that failures are visible and recoverable.
 
+### Provider adapter boundary
+
+Provider adapters are internal controller dependencies. Optional operator adapters such as LocalAGI, REST, MCP, n8n, or shell scripts must not call provider adapters directly.
+
+```text
+operator/client -> controller operation -> AuthorityProvider / ExecutionProvider adapters
+```
+
+Avoid:
+
+```text
+LocalAGI -> Gitea API
+LocalAGI -> Tenet job primitive
+n8n -> raw merge endpoint
+agent -> provider-specific issue mutation
+```
+
+Prefer:
+
+```text
+LocalAGI -> prepare_next
+LocalAGI -> start_dev
+n8n -> run_next
+agent -> create_pr_if_allowed
+```
+
+This keeps the controller interface deep: callers learn a small set of workflow operations, while provider complexity stays local to adapter implementations.
+
+### Provider replaceability contract
+
+Provider adapters are replaceable only if the controller contract remains unchanged.
+
+An authority provider replacement is acceptable when the same controller test suite can run against a fake provider plus the real adapter and prove:
+
+- feature issue lookup returns the same normalized `FeatureRecord`
+- tracer issue lookup returns the same normalized `TracerRecord`
+- mutable status maps to the configured `agent_status/*` vocabulary
+- dependency edges normalize to `blocked_by` and `blocks`
+- issue comments can store controller-owned audit summaries
+- PR creation is idempotent for the same run
+- PR target branch validation is controller-owned, not provider-owned
+- provider URLs are treated as audit refs, while normalized issue keys drive policy
+
+An execution provider replacement is acceptable when the same controller test suite can run against a fake provider plus the real adapter and prove:
+
+- a frozen contract can be registered without re-planning
+- the provider accepts exact required commands
+- the provider accepts exact forbidden paths
+- one controller run maps to one tracer attempt
+- provider-internal retries are capped by controller policy
+- development output returns structured evidence
+- evaluation/critic output returns structured findings or can be normalized by the adapter
+- provider logs and artifacts are linked from the controller run ledger
+
+Provider replacement is not acceptable if swapping providers requires changes to:
+
+- issue eligibility policy
+- dependency-blocking policy
+- snapshot authority rules
+- proof-gate requirements
+- PR target policy
+- merge policy
+- retry-budget ownership
+- controller state transitions
+
+The replacement test is:
+
+```text
+Run the same frozen tracer through:
+  1. fake authority provider + fake execution provider
+  2. Gitea/Forgejo authority adapter + fake execution provider
+  3. fake authority provider + Tenet execution adapter in no-op mode
+  4. the real first-adapter stack
+
+The controller decisions and state transitions must match. Provider-specific URLs, artifact paths, and raw logs may differ.
+```
+
 ### LocalRecall boundary
+
+LocalRecall should be treated as an optional project RAG/index service, not as a strategic memory layer. Its job is to make stable project material easier to search. It should remain replaceable by markdown search, a repo-local index, SQLite/vector search, Postgres-backed RAG, or another retrieval service.
 
 Good LocalRecall collections include:
 
@@ -285,19 +580,21 @@ Good LocalRecall collections include:
 
 Do not use LocalRecall for:
 
-- current Gitea issue state
+- current authority-provider issue state
 - current dependency eligibility
 - selecting the active snapshot version
 - retrieving acceptance criteria when an exact frozen contract exists
 - deciding whether a PR is safe to merge
 
-Exact execution paths must be injected directly into the LocalAGI task and Tenet job.
+Exact execution paths must be injected directly into the task and execution job.
+
+If LocalRecall is unavailable, the harness should continue using exact paths, authority-provider state, frozen snapshots, and normal repository search. Loss of LocalRecall may reduce convenience, but it must not block execution or change authority.
 
 ---
 
 ## Canonical Issue State Model
 
-Use these issue states in Gitea labels for mutable status. Static fields such as `blocked_by`, proof requirements, forbidden paths, and acceptance criteria can live in issue body sections or generated snapshots, but the frequently changing status should be a native Gitea label to avoid fragile issue-body rewrites.
+Use these issue states through the authority provider for mutable status. In the first Gitea/Forgejo adapter, they are labels. Static fields such as `blocked_by`, proof requirements, forbidden paths, and acceptance criteria can live in issue body sections or generated snapshots, but the frequently changing status should use the provider's native label/status mechanism where possible to avoid fragile issue-body rewrites.
 
 ```yaml
 agent_status:
@@ -368,6 +665,20 @@ Every generated `docs/agent-issues/ISSUE-N.vX.md` should start with strict front
 canonical_issue: gitea://gitea.local/owner/repo/issues/123
 parent_prd: gitea://gitea.local/owner/repo/issues/100
 
+authority_provider: gitea
+canonical_issue_key:
+  provider: gitea
+  host: https://gitea.local
+  owner: owner
+  repo: repo
+  number: 123
+parent_prd_key:
+  provider: gitea
+  host: https://gitea.local
+  owner: owner
+  repo: repo
+  number: 100
+
 status: ready
 authority: execution_contract
 snapshot_version: 1
@@ -385,10 +696,11 @@ auto_merge_to_feature: true
 manual_review_required: false
 
 runner_retry_budget: 2
-tenet_internal_max_retries: 0
-tenet_invocation_mode: direct_registered_job
+execution_provider: tenet
+provider_internal_max_retries: 0
+execution_invocation_mode: direct_registered_job
 
-tenet_artifact_paths:
+execution_artifact_paths:
   spec: .tenet/runs/issue-123-attempt-001/spec.md
   scenarios: .tenet/runs/issue-123-attempt-001/scenarios.md
   harness: .tenet/runs/issue-123-attempt-001/harness.md
@@ -437,14 +749,96 @@ The PRD is planning context. The tracer issue and agent-issue snapshot are imple
 
 This section exists specifically to make the harness compatible with Tenet's spec/artifact/job system while preventing Tenet from becoming a second planner.
 
+This is the first `ExecutionProvider` adapter contract, not the controller's permanent execution model.
+
+### How much Tenet can be abstracted
+
+The controller can abstract most of Tenet if it treats Tenet as an execution adapter.
+
+Provider-neutral concepts that should not mention Tenet in controller policy:
+
+- frozen contract
+- run id / run slug
+- artifact bundle
+- development job
+- evaluation job
+- required commands
+- forbidden paths
+- proof artifacts
+- critic findings
+- structured execution result
+- retry budget
+- failure category
+
+Tenet-specific concepts that should stay inside the Tenet adapter:
+
+- Tenet job registration primitive names
+- Tenet artifact path field names
+- `.tenet/runs/<run>/` layout
+- `spec.md`, `scenarios.md`, `harness.md`, and `decomposition.md` as Tenet shim names
+- Tenet internal retry flags
+- Tenet critic invocation and raw critic result format
+- Tenet's one-node DAG compatibility requirements
+
+The controller should store a provider-neutral run contract and let the Tenet adapter render that contract into Tenet's required artifacts.
+
+Recommended controller-owned run contract shape:
+
+```yaml
+run_id: issue-123-attempt-001
+execution_provider: tenet
+contract_ref: docs/agent-issues/ISSUE-123.v1.md
+authority_issue:
+  provider: gitea
+  host: https://gitea.local
+  owner: owner
+  repo: repo
+  number: 123
+feature_branch: feature/login
+agent_branch: agent/issue-123-login-form
+required_commands:
+  - pnpm lint
+  - pnpm test
+forbidden_paths:
+  - .env
+  - secrets/**
+proof:
+  required: true
+  type: playwright
+retry_policy:
+  runner_retry_budget: 2
+  provider_internal_max_retries: 0
+```
+
+Tenet adapter output from that contract:
+
+```text
+.tenet/runs/<run>/spec.md
+.tenet/runs/<run>/scenarios.md
+.tenet/runs/<run>/harness.md
+.tenet/runs/<run>/decomposition.md
+```
+
+A future execution provider can be swapped in if it satisfies the same provider-neutral contract:
+
+1. accepts an externally frozen contract
+2. accepts exact required commands and forbidden paths
+3. accepts one tracer at a time
+4. can return structured development result evidence
+5. can run or expose semantic critics/review
+6. can keep provider-internal retries subordinate to the controller retry budget
+7. does not create a competing feature plan or cross-issue scheduler
+
+If a future engine has stronger guardrails but a different artifact layout, only the execution adapter should change. If it requires redefining issue eligibility, snapshot authority, dependency blocking, PR policy, or merge policy, it is not a clean replacement.
+
 ### Rule: bypass Tenet's planning phases after Skills decomposition
 
-After Skills creates the PRD and Gitea tracer issues, do not use Tenet's normal feature-planning flow for implementation work. In practical terms:
+After Skills creates the PRD and authority-provider tracer issues, do not use Tenet's normal feature-planning flow for implementation work. In practical terms:
 
 - Do not ask Tenet to interview the idea again.
 - Do not ask Tenet to generate a second feature spec.
 - Do not ask Tenet to decompose the feature into its own multi-job DAG.
-- Do not use Tenet Full/Standard/Quick modes as the implementation path once a frozen Skills/Gitea tracer exists.
+- Do not use Tenet Full/Standard/Quick modes as the implementation path once a frozen Skills/authority-provider tracer exists.
 
 Instead, use Tenet's lower-level job primitives directly:
 
@@ -763,7 +1157,7 @@ docs/agent-issues/ISSUE-123.v1.md
 
 Prove Tenet can implement one frozen tracer snapshot **without using Tenet's own interview/spec/decomposition path**.
 
-This stage is where the plan is modified for compatibility with Tenet's spec/artifact system. Tenet still receives `spec`, `scenarios`, `harness`, and `decomposition` artifacts, but those files are generated from the Skills/Gitea agent issue. They are compatibility shims, not a second canonical spec.
+This stage is where the plan is modified for compatibility with Tenet's spec/artifact system. Tenet still receives `spec`, `scenarios`, `harness`, and `decomposition` artifacts, but those files are generated from the Skills/authority-provider agent issue. They are compatibility shims, not a second canonical spec.
 
 ### Additions
 
@@ -782,7 +1176,7 @@ Tenet is now used for implementation, but everything around it is still manual. 
 
 ### Non-negotiable rule
 
-Do not run Tenet in a way that lets it re-interview, re-spec, or re-decompose the feature after Skills/Gitea have already produced the tracer issue.
+Do not run Tenet in a way that lets it re-interview, re-spec, or re-decompose the feature after Skills and the authority provider have already produced the tracer issue.
 
 Use:
 
@@ -1035,7 +1429,7 @@ Document the manual ritual as explicit state transitions and typed operations be
 - `docs/agents/harness-controller-contract.md`
 - State-transition table.
 - CLI command schemas.
-- MCP or REST tool schemas for LocalAGI.
+- Optional MCP or REST adapter schemas that any agent runtime, including LocalAGI, can call.
 - Permission boundaries and structured error categories.
 
 ### What changes from Stage 9
@@ -1048,9 +1442,9 @@ No autonomous loop is added yet. The workflow becomes precise enough to implemen
 # Harness Controller Contract
 
 ## Canonical inputs
-- Gitea epic/tracer issue
+- authority-provider feature/tracer issue
 - frozen agent-issue snapshot
-- exact Tenet run path
+- exact execution-provider run path
 
 ## Valid transitions
 - ready → running
@@ -1062,10 +1456,10 @@ No autonomous loop is added yet. The workflow becomes precise enough to implemen
 ## Controller operations
 - inspect_feature
 - prepare_next
-- start_tenet_dev
+- start_dev
 - run_preflight
 - run_proof
-- start_tenet_eval
+- start_eval
 - classify_run
 - create_pr_if_allowed
 - merge_pr_if_policy_allows
@@ -1083,7 +1477,7 @@ No autonomous loop is added yet. The workflow becomes precise enough to implemen
 
 - Each operation has defined inputs, outputs, side effects, and rejection conditions.
 - A human could execute the entire workflow using only the planned CLI.
-- LocalAGI can later consume the same operations without owning policy.
+- Optional agent adapters can later consume the same operations without owning policy.
 
 ---
 
@@ -1091,21 +1485,23 @@ No autonomous loop is added yet. The workflow becomes precise enough to implemen
 
 ### Goal
 
-Automate issue selection, snapshot generation, Tenet-compatible shim generation, and direct Tenet job registration without creating a custom agent framework.
+Automate issue selection, snapshot generation, execution-provider artifact generation, and development job registration without creating a custom agent framework.
 
 ### Additions
 
 - `harnessctl` or `agent-harness` CLI.
-- Gitea adapter.
+- `AuthorityProvider` interface.
+- Gitea/Forgejo authority adapter.
 - Dependency-aware issue selection.
 - Agent-issue snapshot generator.
-- Tenet shim artifact generator.
-- Direct Tenet registered-job adapter.
+- `ExecutionProvider` interface.
+- Tenet execution adapter.
+- Tenet shim artifact generator behind the Tenet adapter.
 - Structured JSON outputs.
 
 ### What changes from Stage 10
 
-The workflow now has executable policy code, but no LocalAGI autonomy yet.
+The workflow now has executable policy code, with no dependency on LocalAGI or any other agent runtime.
 
 ### Minimum commands
 
@@ -1118,13 +1514,13 @@ harnessctl get-run-state --run issue-123-attempt-001
 
 ### Responsibilities
 
-1. Query Gitea for candidate tracer issues.
+1. Query the authority provider for candidate tracer issues.
 2. Build the dependency graph from canonical issue data.
 3. Select only an eligible issue.
 4. Generate the frozen snapshot.
-5. Generate exact Tenet shim artifacts.
-6. Validate that `decomposition.md` contains one job only.
-7. Register exactly one Tenet `dev` job with exact paths.
+5. Generate exact execution-provider artifacts.
+6. For the first Tenet adapter, validate that `decomposition.md` contains one job only.
+7. Register exactly one execution-provider development job with exact paths.
 8. Persist the selected run slug and snapshot version.
 9. Reject stale, blocked, or over-budget work.
 
@@ -1143,29 +1539,29 @@ harnessctl get-run-state --run issue-123-attempt-001
 ### Exit criteria
 
 - The CLI selects the same issue a careful human would select.
-- It generates a valid frozen contract and exact Tenet artifacts.
+- It generates a valid frozen contract and exact execution-provider artifacts.
 - Tenet does not create a competing spec or multi-job DAG.
-- All outputs are machine-readable enough for LocalAGI and IaC health tests.
+- All outputs are machine-readable enough for optional adapters and IaC health tests.
 
 ---
 
-## Stage 12 — Deploy LocalAGI as the agent control plane
+## Stage 12 — Add an optional LocalAGI adapter
 
 ### Goal
 
-Use LocalAGI for the agent loop and tool orchestration instead of implementing those capabilities inside the controller.
+Expose the controller to LocalAGI only as a convenience layer. The controller and CLI remain the system of record and the primary workflow surface.
 
 ### Additions
 
-- One LocalAGI deployment.
-- One `harness_operator` agent.
-- MCP or REST connection to the controller.
-- Git-synchronized engineering Skills where compatible.
-- Runtime status/streaming available to the operator.
+- Optional LocalAGI deployment.
+- One optional `harness_operator` agent.
+- Thin MCP or REST adapter to the controller.
+- Runtime status/streaming available to the operator, if useful.
+- A required deletion test proving the workflow still works with LocalAGI stopped.
 
 ### What changes from Stage 11
 
-The controller remains deterministic, but a LocalAGI agent can now request its safe operations.
+Nothing about workflow semantics changes. A LocalAGI agent can request the same safe operations a human can run through `harnessctl`.
 
 ### Initial permission set
 
@@ -1175,7 +1571,7 @@ The first agent should receive only:
 inspect_feature
 prepare_next
 get_run_state
-start_tenet_dev
+start_dev
 ```
 
 It should not initially receive:
@@ -1184,7 +1580,8 @@ It should not initially receive:
 create_pr
 merge_pr
 raw shell
-unrestricted Gitea write
+unrestricted authority-provider write
+raw execution-provider job primitive
 secret access
 IaC deployment credentials
 ```
@@ -1199,11 +1596,12 @@ Query the harness controller for current state before every action.
 Use only the exact execution-contract and run paths returned by the controller.
 Do not reinterpret eligibility, retry, proof, PR, or merge policy.
 When the controller rejects an operation, report the rejection rather than bypassing it.
+If this agent is removed, the harnessctl workflow remains authoritative and complete.
 ```
 
 ### Compatibility test for Skills
 
-Test one existing `SKILL.md` package for:
+If LocalAGI will run engineering Skills directly, test one existing `SKILL.md` package for:
 
 - metadata parsing
 - directory layout
@@ -1212,12 +1610,32 @@ Test one existing `SKILL.md` package for:
 - Git synchronization
 - usability by both frontier planning agents and LocalAGI agents
 
+If compatibility requires changing the canonical Skill format, do not do it. Add a small adapter or skip direct LocalAGI Skill execution.
+
+### Deletion test
+
+Run at least one end-to-end toy tracer with LocalAGI disabled:
+
+```bash
+harnessctl inspect-feature --feature login
+harnessctl prepare-next --feature login
+harnessctl start-dev --run issue-123-attempt-001
+harnessctl run-preflight --run issue-123-attempt-001
+harnessctl run-proof --run issue-123-attempt-001
+harnessctl start-eval --run issue-123-attempt-001
+harnessctl create-pr-if-allowed --run issue-123-attempt-001
+```
+
+The result must match the LocalAGI-mediated path except for LocalAGI-only UI/conversation logs.
+
 ### Exit criteria
 
-- LocalAGI can prepare and start one real Tenet job through the controller.
-- The same operation still works manually through CLI.
+- The CLI path remains complete and documented.
+- LocalAGI can prepare and start one real execution-provider job through the controller, if enabled.
 - LocalAGI cannot bypass dependency or state policy.
 - Runtime UI/state is useful but clearly non-canonical.
+- Removing LocalAGI does not require changing authority-provider issues, agent-issue snapshots, execution artifacts, controller state, PR bodies, or feature summaries.
+- Prompts, agent profiles, model profiles, and permissions used by LocalAGI are recoverable from Git-controlled config.
 
 ---
 
@@ -1232,14 +1650,15 @@ Enforce mechanical facts before any semantic critic or PR action.
 - `scripts/agent/merge-preflight.ts`
 - `.tenet/runs/<run>/gate/merge-preflight.json`
 - Controller operation `run_preflight`.
-- LocalAGI tool wrapper that returns the controller's result unchanged.
+- Optional LocalAGI tool wrapper that returns the controller's result unchanged.
 
 ### Preflight checks
 
 - Canonical issue exists.
 - Correct snapshot version exists.
-- Exact Tenet shim artifacts exist.
-- Tenet decomposition contains exactly one job.
+- Exact execution-provider artifacts exist.
+- For the first Tenet adapter, Tenet shim artifacts exist.
+- For the first Tenet adapter, Tenet decomposition contains exactly one job.
 - Acceptance criteria and required commands are present.
 - Dependencies are merged.
 - Branch naming policy is satisfied.
@@ -1258,6 +1677,7 @@ Enforce mechanical facts before any semantic critic or PR action.
   "checks": {
     "canonical_issue_found": true,
     "snapshot_current": true,
+    "execution_artifacts_found": true,
     "tenet_decomposition_is_one_node": true,
     "forbidden_paths_unchanged": false
   },
@@ -1270,8 +1690,8 @@ Enforce mechanical facts before any semantic critic or PR action.
 ### Exit criteria
 
 - Preflight fails fast and deterministically.
-- LocalAGI cannot reinterpret a failed preflight as a pass.
-- The controller updates or recommends the correct Gitea failure state.
+- No adapter, including LocalAGI, can reinterpret a failed preflight as a pass.
+- The controller updates or recommends the correct authority-provider failure state.
 
 ---
 
@@ -1297,7 +1717,7 @@ proof_required: true
 proof_type: playwright
 ```
 
-proof must pass before Tenet E2E evaluation or PR creation.
+proof must pass before execution-provider E2E evaluation or PR creation.
 
 ### Exit criteria
 
@@ -1307,7 +1727,7 @@ proof must pass before Tenet E2E evaluation or PR creation.
 
 ---
 
-## Stage 15 — Add Tenet evaluation and structured failure classification
+## Stage 15 — Add execution-provider evaluation and structured failure classification
 
 ### Goal
 
@@ -1315,7 +1735,7 @@ Run semantic critics only after deterministic gates pass and normalize their fin
 
 ### Additions
 
-- Controller operation `start_tenet_eval`.
+- Controller operation `start_eval`.
 - `failure_triage` agent, dedicated classifier prompt, or CLI-invoked classifier.
 - Structured classification schema.
 - Clear distinction between deterministic facts and semantic recommendations.
@@ -1323,12 +1743,12 @@ Run semantic critics only after deterministic gates pass and normalize their fin
 ### Classification inputs
 
 ```text
-canonical Gitea issue
+canonical authority-provider issue
 frozen snapshot
-Tenet shim artifacts
+execution-provider artifacts
 merge-preflight.json
 proof JSON
-Tenet critic findings
+execution-provider critic findings
 run logs
 changed files
 ```
@@ -1351,22 +1771,22 @@ The controller owns the final allowed state transition. The classifier supplies 
 
 ---
 
-## Stage 16 — Add Gitea state updates and audit links
+## Stage 16 — Add authority-provider state updates and audit links
 
 ### Goal
 
-Make Gitea reflect the authoritative harness state while preserving LocalAGI and Tenet logs as supporting evidence.
+Make the authority provider reflect the authoritative harness state while preserving execution-provider logs and any optional adapter logs as supporting evidence.
 
 ### Additions
 
-- Gitea adapter write operations.
-- Native `agent_status:*` labels.
+- AuthorityProvider write operations.
+- Native or mapped `agent_status:*` labels.
 - Comments linking issue, snapshot, run, gate results, proof, and critic summary.
 - Idempotent update behavior.
 
 ### State updates
 
-| Event | Gitea state |
+| Event | Authority-provider state |
 |---|---|
 | Controller selects issue | `running` |
 | Preflight passes | `passed_preflight` |
@@ -1378,8 +1798,8 @@ Make Gitea reflect the authoritative harness state while preserving LocalAGI and
 
 ### Exit criteria
 
-- Gitea alone shows the current canonical state.
-- LocalAGI restart or memory loss does not impair resumption.
+- The authority provider alone shows the current canonical state.
+- LocalAGI restart, removal, or memory loss does not impair resumption.
 - Every run is traceable from its issue and every issue links to its runs.
 
 ---
@@ -1393,9 +1813,9 @@ Create a PR only after deterministic gates and required semantic critics pass.
 ### Additions
 
 - Controller operation `create_pr_if_allowed`.
-- Branch push and Gitea PR adapter.
+- Branch push and authority-provider PR adapter.
 - PR body template with complete evidence links.
-- LocalAGI access to the policy-wrapped operation, not raw PR administration.
+- Optional LocalAGI access to the policy-wrapped operation, not raw PR administration.
 
 ### PR evidence
 
@@ -1404,7 +1824,7 @@ The PR body should include:
 ```text
 canonical issue
 snapshot path and version
-Tenet run path
+execution run path
 changed scope summary
 required commands and results
 preflight result
@@ -1433,7 +1853,7 @@ Allow safe low-risk tracer PRs to merge into feature branches while proving that
 - Auto-merge policy engine.
 - Dependent-issue unblocking after confirmed merge.
 - Failure test matrix.
-- Runner retry budget and Tenet internal retry limit.
+- Runner retry budget and provider-internal retry limit.
 
 ### Auto-merge requirements
 
@@ -1450,12 +1870,12 @@ And:
 ```text
 preflight passed
 proof passed or was not required
-required Tenet critics passed
+required execution-provider critics passed
 PR target is the feature branch
 no forbidden paths changed
 all dependencies are actually merged
 budget remains available
-one-job Tenet contract remained intact
+one-job execution contract remained intact
 ```
 
 Never auto-merge changes involving security/auth policy, production infrastructure, secrets, migrations, permissions, billing, destructive data paths, or major dependency upgrades.
@@ -1475,19 +1895,19 @@ Test at least:
 9. Repeated failed retry.
 10. Superseded issue.
 11. Budget exceeded.
-12. Missing Tenet shim artifact.
-13. Multi-job Tenet decomposition.
+12. Missing execution-provider artifact.
+13. Multi-job execution-provider decomposition, or multi-job Tenet decomposition for the first Tenet adapter.
 14. Stale snapshot version.
-15. LocalAGI requests an invalid transition.
-16. LocalAGI requests raw merge bypass.
-17. LocalAGI or controller restarts mid-run.
-18. Gitea or Tenet is temporarily unavailable.
+15. An adapter requests an invalid transition.
+16. An adapter requests raw merge bypass.
+17. LocalAGI is deleted or the controller restarts mid-run.
+18. Authority provider or execution provider is temporarily unavailable.
 
 ### Retry policy
 
 ```yaml
 runner_retry_budget: 2
-tenet_internal_max_retries: 0
+provider_internal_max_retries: 0
 ```
 
 ### Exit criteria
@@ -1510,6 +1930,7 @@ Repair bad tracer specifications and add reusable semantic workflows without mov
 ```text
 skills/engineering/to-agent-issue/SKILL.md
 skills/engineering/triage-tenet-failure/SKILL.md
+skills/engineering/triage-execution-failure/SKILL.md
 skills/engineering/to-respec-issue/SKILL.md
 skills/engineering/review-run-evidence/SKILL.md
 ```
@@ -1518,15 +1939,19 @@ skills/engineering/review-run-evidence/SKILL.md
 
 #### `to-agent-issue`
 
-Generates the frozen snapshot and proposed Tenet shims from the current canonical issue. The controller validates and commits the exact output paths and version.
+Generates the frozen snapshot and proposed execution-provider artifacts from the current canonical issue. The controller validates and commits the exact output paths and version. With the first Tenet adapter, those artifacts are Tenet shims.
 
 #### `triage-tenet-failure`
 
-Produces the structured semantic failure recommendation. It cannot directly overwrite deterministic gate categories.
+Tenet-specific semantic failure recommendation skill for the first execution adapter.
+
+#### `triage-execution-failure`
+
+Provider-neutral semantic failure recommendation skill. It cannot directly overwrite deterministic gate categories.
 
 #### `to-respec-issue`
 
-Proposes replacement issues when the tracer itself is wrong. The controller/Gitea adapter performs the canonical supersede and dependency rewiring operations.
+Proposes replacement issues when the tracer itself is wrong. The controller and authority-provider adapter perform the canonical supersede and dependency rewiring operations.
 
 #### `review-run-evidence`
 
@@ -1536,7 +1961,7 @@ Summarizes contract compliance, changed scope, tests, proof, critic output, and 
 
 - Bad tracer bullets can be superseded without corrupting history.
 - Skills are reusable through frontier planning workflows, CLI/controller execution, and LocalAGI only where compatible without changing the canonical format.
-- Agent-generated proposals are validated before becoming canonical Gitea changes.
+- Agent-generated proposals are validated before becoming canonical authority-provider changes.
 
 ---
 
@@ -1544,7 +1969,7 @@ Summarizes contract compliance, changed scope, tests, proof, critic output, and 
 
 ### Goal
 
-Replace selected frontier roles with local models only after the controller, LocalAGI integration, gates, and failure handling are reliable.
+Replace selected frontier roles with local models only after the controller, CLI path, gates, and failure handling are reliable. LocalAGI integration is not a prerequisite.
 
 ### Additions
 
@@ -1616,15 +2041,15 @@ The IaC system should treat this harness as several deployable services with exp
 ## Deployable units
 
 ```text
-gitea
+authority-provider instance  # Gitea/Forgejo first; GitHub SaaS or another forge later
 harness-controller
-localagi
+localagi-adapter          # optional convenience surface; not required for core workflow
 localai-oracle
 localai-denbuntu
 localai-jmapple          # optional
 localrecall              # optional/later
 n8n                      # triggers/notifications only
-tenet worker environment # may be colocated with controller or dev worker initially
+execution-provider environment # Tenet worker first; may be colocated with controller or dev worker initially
 ```
 
 ## Configuration categories
@@ -1635,10 +2060,10 @@ The IaC analysis should account for:
 - service users and filesystem ownership
 - persistent volumes and backup requirements
 - exact repository/worktree locations
-- Gitea URL, repository identity, labels, and API credentials
-- LocalAGI agent definitions and enabled Skills repositories
+- authority provider type, URL, repository identity, labels/status mapping, dependency mapping, and API credentials
+- optional LocalAGI agent definitions and enabled Skills repositories
 - controller MCP/REST endpoint and authentication
-- Tenet binary/version and run-root paths
+- execution provider type, binary/version or endpoint, run-root paths, artifact schema, and eval/critic capabilities
 - LocalAI endpoint inventory and logical model profiles
 - model storage paths and download provenance
 - GPU device exposure and runtime-specific configuration
@@ -1657,23 +2082,23 @@ Recommended secret ownership:
 
 ```text
 harness-controller:
-  Gitea token with only required repository permissions
-  Tenet/runtime credentials if required
+  authority-provider token with only required repository permissions
+  execution-provider credentials if required
 
 LocalAGI:
   controller access token
   model-provider keys for assigned agents
-  no unrestricted Gitea admin token
+  no unrestricted authority-provider admin token
   no production deployment credentials
   no unique workflow secrets that are unavailable to the CLI/controller path
 
 LocalAI:
-  normally no Gitea credentials
+  normally no authority-provider credentials
   model registry credentials only if required
 
 LocalRecall:
   database credentials
-  no merge or Gitea write credentials
+  no merge or authority-provider write credentials
 ```
 
 ## Network boundary
@@ -1682,33 +2107,64 @@ Prefer allowlisted communication:
 
 ```text
 LocalAGI → harness-controller, when enabled
-harness-controller → Gitea
-harness-controller → Tenet worker/runtime
+harness-controller → authority provider
+harness-controller → execution provider
 LocalAGI → LocalAI endpoint(s), when enabled
 LocalAGI → LocalRecall, when enabled
 n8n → harness-controller trigger endpoint
 ```
 
-LocalAI and LocalRecall should not need direct write access to Gitea.
+LocalAI and LocalRecall should not need direct write access to the authority provider.
+The controller must not require inbound traffic from LocalAGI to operate.
 
 ## Health and readiness
 
 At minimum, IaC should be able to verify:
 
 ```text
-Gitea API reachable and authenticated
+authority provider reachable and authenticated
 controller can read repository state
 controller CLI/MCP schema version matches expected version
-LocalAGI can list the allowed controller tools
-Tenet can execute a no-op or toy registered job
+optional LocalAGI adapter can list the allowed controller tools
+core workflow still passes with LocalAGI disabled
+execution provider can execute a no-op or toy registered job
 LocalAI endpoint can load and answer with the configured model
 LocalRecall can write/read a test document when enabled
 persistent paths have correct ownership and free space
 ```
 
+## Portability and swap tests
+
+Run these tests before treating the architecture as portable:
+
+```text
+LocalAGI off:
+  harnessctl can complete inspect, prepare, execution job registration, gates, PR creation, and authority-provider state updates.
+
+LocalRecall off:
+  exact contracts, authority-provider state, and repo-local search still let the run proceed.
+
+LocalAI swapped:
+  the same logical model profile can route to LocalAI, a frontier provider, or another OpenAI-compatible endpoint without changing the run contract.
+
+MCP adapter replaced:
+  a REST client or direct CLI invocation can call the same controller operations with equivalent structured results.
+
+Prompt/profile restore:
+  a fresh LocalAGI install can recreate agent behavior from Git-controlled prompts, profiles, model routing, and permission manifests.
+
+Authority provider swapped:
+  a fixture-backed adapter test can run the same controller workflow against Gitea/Forgejo and GitHub-style issue/PR semantics without changing controller policy.
+
+Execution provider swapped:
+  a fixture-backed adapter test can register a frozen contract, execute a no-op development job, return structured evidence, and run or simulate critics without changing controller policy.
+```
+
+These are not performance tests. They prove that the Local Stack is an implementation choice, not the foundation of the harness.
+
 ## Portability rule
 
-Agent definitions, Skills, controller schemas, policy files, and model-routing profiles should live in Git wherever practical. Secrets, large model weights, transient run logs, and generated proof artifacts should not be embedded in IaC source.
+Agent definitions, Skills, controller schemas, policy files, and model-routing profiles should live in Git wherever practical. LocalAGI-specific agent definitions are adapter configuration, not canonical harness configuration. Secrets, large model weights, transient run logs, and generated proof artifacts should not be embedded in IaC source.
 
 ---
 
@@ -1723,21 +2179,21 @@ harnessctl run-next --feature login
 The actual safe workflow is:
 
 ```text
-1. Human, n8n, or LocalAGI requests the next run.
-2. Controller queries fresh Gitea state.
+1. Human, n8n, LocalAGI, or another optional adapter requests the next run.
+2. Controller queries fresh authority-provider state.
 3. Controller builds the dependency graph and selects eligible work.
 4. Controller generates/version-checks the frozen agent-issue snapshot.
-5. Controller generates exact Tenet-compatible shim artifacts.
-6. Controller registers exactly one Tenet dev job.
-7. LocalAGI orchestrates allowed calls and reports runtime progress.
-8. Tenet performs development using the assigned frontier or LocalAI-backed model.
+5. Controller generates exact execution-provider artifacts.
+6. Controller registers exactly one development job.
+7. The CLI/controller path advances the run; LocalAGI may report runtime progress if enabled.
+8. The execution provider performs development using the assigned frontier or LocalAI-backed model.
 9. Controller runs deterministic preflight.
 10. Controller runs required proof.
-11. Tenet critics and optional secondary reviewers run only after gates pass.
+11. Execution-provider critics and optional secondary reviewers run only after gates pass.
 12. Failure classifier recommends semantic routing; controller enforces valid state.
 13. Controller creates a feature-branch PR if all requirements pass.
 14. Controller auto-merges only when explicit low-risk policy allows.
-15. Gitea records the canonical state and audit links.
+15. The authority provider records the canonical state and audit links.
 16. Dependents unblock only after confirmed feature-branch merge.
 17. Main remains human-reviewed and human-merged.
 ```
@@ -1745,11 +2201,11 @@ The actual safe workflow is:
 The operational shorthand is:
 
 ```text
-LocalAGI requests.
+Humans, scripts, or optional adapters request.
 The controller validates.
-Tenet executes and evaluates.
+The execution provider executes and evaluates.
 LocalAI serves selected models.
-Gitea records truth.
+The authority provider records truth.
 ```
 
 # Completed Feature Finalization
@@ -1767,13 +2223,33 @@ docs/features/<feature-slug>.md
 ```yaml
 status: completed
 authority: historical_summary
-canonical_epic: gitea://gitea.local/owner/repo/issues/100
+canonical_epic:
+  provider: gitea
+  host: https://gitea.local
+  owner: owner
+  repo: repo
+  number: 100
 feature_branch: feature/login
-merged_to_main_pr: gitea://gitea.local/owner/repo/pulls/500
+merged_to_main_pr:
+  provider: gitea
+  host: https://gitea.local
+  owner: owner
+  repo: repo
+  number: 500
 tracer_issues:
-  - gitea://gitea.local/owner/repo/issues/123
-  - gitea://gitea.local/owner/repo/issues/124
-  - gitea://gitea.local/owner/repo/issues/125
+  - provider: gitea
+    host: https://gitea.local
+    owner: owner
+    repo: repo
+    number: 123
+  - provider: gitea
+    host: https://gitea.local
+    owner: owner
+    repo: repo
+    number: 124
+external_refs:
+  canonical_epic_url: gitea://gitea.local/owner/repo/issues/100
+  merged_to_main_pr_url: gitea://gitea.local/owner/repo/pulls/500
 ```
 
 3. Archive or remove active planning files:
@@ -1784,78 +2260,90 @@ docs/agent-issues/ISSUE-*.md
 .tenet/runs/<feature>/*
 ```
 
-4. Keep Gitea as the full audit trail.
+4. Keep the authority provider as the full audit trail.
 5. Keep the feature summary in the repo so future agents know where to look.
 
 ---
 
 # Design Principles
 
-1. **Do not build a custom multi-agent runtime when LocalAGI can supply the commodity layer.**  
-   Keep custom work focused on policy, evidence, state, and project-specific integration.
+1. **Build the controller and CLI first.**
+   The harness must be useful, testable, and complete before any agent platform is attached.
 
-2. **Do not make LocalAGI a source of truth.**  
-   Its conversations, summaries, schedules, and runtime state are advisory and operational only.
+2. **Treat LocalAGI as an optional adapter, not a platform dependency.**
+   Its conversations, summaries, schedules, and runtime state are advisory and operational only. Deleting it must not change the workflow.
 
-3. **Keep a CLI beneath every agent tool.**  
+3. **Keep a CLI beneath every adapter tool.**
    The workflow must remain testable and recoverable without an LLM.
 
-4. **Use capability-limited tools.**  
+4. **Use the Boring Bridge.**
+   LocalAGI, LangGraph, Codex, Claude, n8n, or a custom loop should all call the same MCP/REST/CLI-backed controller operations.
+
+5. **Keep tools dumb and controller-owned.**
+   Adapter tools pass requests to the controller and return structured controller results. They do not own policy, state, retries, or merge decisions.
+
+6. **Keep portable configuration in Git.**
+   Prompts, Skills, agent profiles, model-routing rules, controller schemas, and permission manifests should be recoverable without LocalAGI.
+
+7. **Use capability-limited tools.**
    Expose policy-wrapped operations such as `merge_pr_if_policy_allows`, not unrestricted merge or shell access.
 
-5. **Do not patch Tenet until necessary.**  
-   Use supported job primitives and repo-local adapters first.
+8. **Make provider replacement a controller test, not a rewrite.**
+   Gitea/Forgejo, GitHub, Tenet, or a future execution engine should be proven through adapter tests against the same controller contract.
 
-6. **Do not let Tenet guess context.**  
+9. **Do not patch Tenet until necessary.**
+   Use supported job primitives and a Tenet execution adapter first.
+
+10. **Do not let the execution provider guess context.**
    Always pass exact artifact paths.
 
-7. **Do not let Tenet re-plan Skills/Gitea work.**  
-   After a tracer exists, use one frozen snapshot and one registered Tenet job.
+11. **Do not let the execution provider re-plan Skills/authority-provider work.**
+   After a tracer exists, use one frozen snapshot and one registered execution job.
 
-8. **Do not let Tenet's DAG compete with Gitea.**  
-   Gitea owns cross-issue dependencies; Tenet receives a one-node DAG.
+12. **Do not let the execution provider's DAG compete with the authority provider.**
+   The authority provider owns cross-issue dependencies; the first Tenet adapter receives a one-node DAG.
 
-9. **Do not let retry systems compound.**  
-   Keep Tenet internal retries at `0` or `1`; let the controller own the product retry budget.
+13. **Do not let retry systems compound.**
+   Keep provider-internal retries at `0` or `1`; let the controller own the product retry budget.
 
-10. **Prefer deterministic gates before LLM critics.**  
+14. **Prefer deterministic gates before LLM critics.**
     Scripts verify facts; critics judge meaning.
 
-11. **Do not let semantic agents override deterministic failures.**  
+15. **Do not let semantic agents override deterministic failures.**
     A failed forbidden-path, proof, dependency, or budget check remains failed.
 
-12. **Do not make LocalRecall authoritative.**  
-    Use it for stable doctrine and history, never current issue state or exact contract selection.
+16. **Do not make LocalRecall authoritative.**
+    Use it as optional project RAG over stable doctrine and history, never current issue state or exact contract selection.
 
-13. **Treat LocalAI as inference infrastructure.**  
-    It serves models; it does not own workflow state or merge decisions.
+17. **Put LocalAI behind a model gateway.**
+    Route by logical model profile, not by hard-coded LocalAI internals. LocalAI serves models; it does not own workflow state or merge decisions.
 
-14. **Prefer job-level routing before distributed model sharding.**  
+18. **Prefer job-level routing before distributed model sharding.**
     One reliable endpoint per role is easier to debug and automate.
 
-15. **Do not make n8n source of truth.**  
-    It may trigger and notify, but Gitea and the controller own state.
+19. **Do not make n8n source of truth.**
+    It may trigger and notify, but the authority provider and the controller own state.
 
-16. **Do not make failed runs disappear.**  
+20. **Do not make failed runs disappear.**
     They are evidence and should remain linked to the canonical issue.
 
-17. **Do not auto-merge risky work.**  
+21. **Do not auto-merge risky work.**
     Passing critics is not the same as being safe to merge.
 
-18. **Do not introduce local LLMs early.**  
+22. **Do not introduce local LLMs early.**
     First prove the workflow with frontier models through the same controller contract.
 
-19. **Do not introduce multi-machine orchestration first.**  
+23. **Do not introduce multi-machine orchestration first.**
     One reliable LocalAI worker beats several unreliable endpoints.
 
-20. **Do not treat the PRD as implementation authority after decomposition.**  
+24. **Do not treat the PRD as implementation authority after decomposition.**
     The tracer issue and frozen snapshot govern the attempt.
 
-21. **Do not let stale files or memories confuse agents.**  
+25. **Do not let stale files or memories confuse agents.**
     Version snapshots, inject exact paths, and archive completed feature planning artifacts.
 
-22. **Make infrastructure boundaries explicit.**  
+26. **Make infrastructure boundaries explicit.**
     Services, secrets, volumes, health checks, network access, and upgrade paths should be reproducible through IaC.
 
-23. **Keep main human-controlled.**  
+27. **Keep main human-controlled.**
     Automation may merge eligible low-risk work only into feature branches.

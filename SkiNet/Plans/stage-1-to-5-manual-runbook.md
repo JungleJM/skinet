@@ -1,6 +1,6 @@
 # Stage 1-6 Manual Runbook
 
-This runbook turns the first part of `skills_tenet_localagi_runner_harness_plan_v2.md` into a concrete manual path.
+This runbook turns the first part of `skills_tenet_localagi_runner_harness_plan_v0.3.md` into a concrete manual path.
 
 This runbook intentionally uses the first concrete adapters:
 
