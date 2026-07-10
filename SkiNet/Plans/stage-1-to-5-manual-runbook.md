@@ -21,6 +21,48 @@ Out of scope for this pass:
 
 ## Decisions
 
+### Where Skills run
+
+Run the Matt Pocock Skills from this planning repository:
+
+```bash
+cd /Users/jmath/Documents/code/skinet
+```
+
+Reason: this repository contains the installed Skills package:
+
+```text
+.agents/skills/
+skills-lock.json
+```
+
+The practice app repository is only the target project for the generated PRD, tracer issue snapshots, Tenet artifacts, and eventual code. It does not need its own copy of the Skills package for this first manual pass.
+
+Current repo reality:
+
+- `skinet` is the planning and harness-design repository.
+- `skinet` currently has no application code for the Vikunja practice app.
+- The meaningful local content here is the Skills installation, Tenet MCP config, and SkiNet planning docs.
+- `skinet-test-tracer` is the separate practice app repository where the PRD and later code will live.
+
+Use this Skills sequence:
+
+```text
+/grill-me
+/to-spec
+/to-tickets
+```
+
+Why this sequence:
+
+- `/ask-matt` is only a router. Its installed guidance says the "idea -> ship" flow starts with `/grill-me` when there is no codebase.
+- `/grill-with-docs` is not the right first step here because there is no existing application codebase or domain docs to maintain for the Vikunja app yet.
+- `/to-spec` turns the conversation into the PRD/spec after the idea has been sharpened.
+- `/to-tickets` breaks that spec into tracer-bullet tickets with blocking edges.
+- `/implement` is not part of this Stage 1-5 planning pass. It belongs later, when a single approved tracer is ready to build.
+
+Do not expect these Skills to run as shell commands. Invoke them in the Codex/agent chat while the active workspace is `/Users/jmath/Documents/code/skinet`.
+
 ### Practice repository
 
 Use the Gitea test repository as a separate practice project:
@@ -195,19 +237,47 @@ Expected result: SSH push to Gitea works.
 
 Goal: create a real PRD and tracer-bullet breakdown for the Vikunja board viewer.
 
-Work in the practice repo:
+Run the Skills conversation from the planning repo:
 
 ```bash
-cd /Users/jmath/Documents/code/skinet-test-tracer
-mkdir -p docs/prd
+cd /Users/jmath/Documents/code/skinet
 ```
 
-### Feature prompt
+### 1. Sharpen the idea with `/grill-me`
+
+Invoke:
+
+```text
+/grill-me
+```
 
 Use this as the starting feature statement:
 
 ```text
-Build a small read-only web app that displays one configured Vikunja project as a kanban board. The first implementation should be fixture-backed so the harness can prove UI behavior without requiring live credentials. Later tracer bullets can add live Vikunja API loading.
+I want a small practice feature for the SkiNet harness. Build a read-only web app that displays one configured Vikunja project as a kanban board. The first implementation should be fixture-backed so the harness can prove UI behavior without requiring live credentials. Later tracer bullets can add live Vikunja API loading. There is no existing app code yet; this is a new tiny practice app in a separate Gitea repo.
+```
+
+Answer the grilling questions until the shape is clear enough to write a PRD. Keep steering toward a small first tracer, not a complete Vikunja client.
+
+### 2. Convert the conversation into a PRD with `/to-spec`
+
+Invoke:
+
+```text
+/to-spec
+```
+
+Important adjustment for this manual pass:
+
+- The installed `/to-spec` skill says it publishes to the configured project issue tracker.
+- For Stage 2, do not require automatic publishing.
+- Ask it to produce the spec content for a local file first.
+- The file will be created in the practice repo as `docs/prd/vikunja-kanban-viewer.md`.
+
+Use this instruction with `/to-spec`:
+
+```text
+Produce the PRD/spec content only. Do not publish to an issue tracker yet. This repo is the Skills/harness planning repo, not the app repo. The output will be saved manually into /Users/jmath/Documents/code/skinet-test-tracer/docs/prd/vikunja-kanban-viewer.md.
 ```
 
 ### PRD constraints
@@ -221,7 +291,27 @@ The PRD should explicitly say:
 - The UI shows columns and cards from one project.
 - The feature is complete only when a human can see a board-like view and a test can verify the rendered columns/cards.
 
-### Suggested tracer bullets
+### 3. Break the PRD into tracer tickets with `/to-tickets`
+
+Invoke:
+
+```text
+/to-tickets
+```
+
+Important adjustment for this manual pass:
+
+- The installed `/to-tickets` skill can publish either local markdown files or real tracker issues, depending on setup.
+- For Stage 2, ask for the proposed ticket breakdown only.
+- In Stage 3, manually create the Gitea epic and tracer issues from the approved breakdown.
+
+Use this instruction with `/to-tickets`:
+
+```text
+Break the Vikunja kanban viewer PRD into two or three tracer-bullet tickets. Do not publish them yet. Show the ticket titles, blocking edges, delivered behavior, and acceptance criteria so I can manually create the Gitea issues in Stage 3.
+```
+
+Suggested tracer bullets if the skill output needs steering:
 
 Create two or three tracers, not more:
 
@@ -238,7 +328,14 @@ Create two or three tracers, not more:
 
 The first Tenet preparation should use tracer 1 only.
 
-### Output file
+### 4. Save the PRD into the practice repo
+
+After `/to-spec` output is accepted, switch to the practice repo:
+
+```bash
+cd /Users/jmath/Documents/code/skinet-test-tracer
+mkdir -p docs/prd
+```
 
 Create:
 
@@ -261,11 +358,20 @@ Suggested sections:
 ## Proof Plan
 ```
 
+Commit the PRD:
+
+```bash
+git add docs/prd/vikunja-kanban-viewer.md
+git commit -m 'Add Vikunja kanban viewer PRD'
+git push
+```
+
 ### Stage 2 exit criteria
 
 - `docs/prd/vikunja-kanban-viewer.md` exists.
 - It contains two or three tracer bullets.
 - The first tracer is fixture-backed, narrow, demoable, and independently testable.
+- The tracer breakdown came from the installed Matt Pocock Skills flow: `/grill-me`, `/to-spec`, then `/to-tickets`.
 
 ## Stage 3 - Promote PRD And Tracers Into Gitea
 
