@@ -128,5 +128,5 @@ approval_mode = "approve"
 approval_mode = "approve"
 
 
-[projects."/Users/jmath/Documents/code/vikalendar-tenet"]
+[projects."/Users/jmath/Documents/code/skinet"]
 trust_level = "trusted"
