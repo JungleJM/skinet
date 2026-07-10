@@ -1,4 +1,4 @@
-# Stage 1-5 Manual Runbook
+# Stage 1-6 Manual Runbook
 
 This runbook turns the first part of `skills_tenet_localagi_runner_harness_plan_v2.md` into a concrete manual path.
 
@@ -7,6 +7,7 @@ Scope:
 - Use Matt Pocock Skills for planning.
 - Use the self-hosted Gitea repository as canonical issue state.
 - Use a small practice project in a separate repository.
+- Let Codex create the practice app baseline before tracer work starts.
 - Prepare Tenet-compatible run artifacts.
 - Stop before starting the Tenet development job.
 
@@ -18,6 +19,7 @@ Out of scope for this pass:
 - No controller implementation.
 - No automation around Gitea state.
 - No Tenet job execution yet.
+- No credit for app scaffolding as part of the first tracer test.
 
 ## Decisions
 
@@ -59,7 +61,7 @@ Why this sequence:
 - `/grill-with-docs` is not the right first step here because there is no existing application codebase or domain docs to maintain for the Vikunja app yet.
 - `/to-spec` turns the conversation into the PRD/spec after the idea has been sharpened.
 - `/to-tickets` breaks that spec into tracer-bullet tickets with blocking edges.
-- `/implement` is not part of this Stage 1-5 planning pass. It belongs later, when a single approved tracer is ready to build.
+- `/implement` is not part of this Stage 1-6 planning pass. It belongs later, when a single approved tracer is ready to build.
 
 Do not expect these Skills to run as shell commands. Invoke them in the Codex/agent chat while the active workspace is `/Users/jmath/Documents/code/skinet`.
 
@@ -103,7 +105,162 @@ Initial feature:
 Display one configured Vikunja project as a read-only kanban board.
 ```
 
-Keep credentials and live API calls out of the first tracer if possible. Start with a tiny fixture-backed UI, then add the real API as a later tracer.
+Keep credentials and live API calls out of the first tracer. Start with a tiny fixture-backed UI, then add the real API as a later tracer.
+
+The operator persona is:
+
+```text
+As an operator, I want to see the current state of one Vikunja project as a kanban board, so I can quickly inspect work without opening Vikunja.
+```
+
+There is no project-selection UI in this feature. The app displays one project:
+
+- fixture-defined in the first tracer
+- environment/config-defined in the later live-fetch tracer
+
+### Practice app baseline
+
+Codex owns the practice app baseline setup after the PRD exists and before Gitea tracer issues are created.
+
+Baseline stack:
+
+```text
+Vite + React + TypeScript
+Playwright
+Vitest or equivalent lightweight unit/smoke test runner
+```
+
+Baseline setup is not part of the tracer experiment. It is a precondition for tracer 1.
+
+Baseline must include only:
+
+- Vite React TypeScript app scaffold.
+- Playwright installed and configured.
+- A passing smoke test that opens the app.
+- Scripts:
+  - `npm run dev`
+  - `npm run build`
+  - `npm test`
+  - `npm run test:e2e`
+
+Baseline must not include:
+
+- Vikunja domain code.
+- Board fixture data.
+- Board UI.
+- Vikunja URL or token.
+- `.env` requirements.
+- Live service calls.
+
+Baseline proof commands:
+
+```bash
+npm run build
+npm test
+npm run test:e2e
+```
+
+Codex commits and pushes the baseline before tracer 1 starts. Later tracer evidence must not count baseline setup as part of tracer success.
+
+### First tracer boundary
+
+Tracer 1 is:
+
+```text
+Fixture-backed board shell
+```
+
+It may add:
+
+- app-owned fixture data
+- board rendering code
+- feature tests
+- Playwright board visibility proof
+
+It must not rewrite baseline tooling unless the baseline itself is proven wrong:
+
+- package manager
+- test runner
+- Playwright config shape
+- Vite config shape
+- baseline smoke test semantics
+
+Use an app-owned normalized fixture model first, not raw Vikunja API JSON:
+
+```ts
+type BoardFixture = {
+  project: {
+    id: string;
+    title: string;
+  };
+  columns: Array<{
+    id: string;
+    title: string;
+    cards: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      assignee?: string;
+      dueDate?: string;
+    }>;
+  }>;
+};
+```
+
+Minimum UI done boundary:
+
+- project title
+- three columns
+- at least two cards in one column
+- card title
+- optional assignee and due-date metadata when present
+- responsive horizontal scroll or stacked columns
+- basic usable polish: readable cards, separated columns, desktop/mobile layout, no text overlap
+
+Explicitly out of scope:
+
+- drag and drop
+- card editing
+- card details modal
+- filtering
+- swimlanes
+- Vikunja labels
+- comments
+- attachments
+- custom design system
+- animations
+- dark mode
+- Vikunja branding fidelity
+
+Tracer 1 proof must include:
+
+```bash
+npm run build
+npm test
+npm run test:e2e
+```
+
+The Playwright feature test must assert:
+
+- project title is visible
+- all three column titles are visible
+- at least one expected card title is visible under the expected column
+- no request is made to a Vikunja host or `/api/` path
+
+Tracer 1 is secret-free:
+
+- no `.env`
+- no Vikunja URL
+- no API token
+- no auth config
+- no local ignored credentials
+- no live Vikunja instance requirement
+
+### Later-stage notes
+
+The live-fetch tracer should use mocked API responses in automated tests. The real self-hosted Vikunja instance is only for manual smoke testing.
+
+Respec workflow remains out of scope for this first PRD/run. If a tracer requirement is unclear or conflicts with project doctrine, the run should stop as `scope_conflict`.
 
 ### PRD location
 
@@ -113,7 +270,7 @@ Create the first PRD as a local file first:
 docs/prd/vikunja-kanban-viewer.md
 ```
 
-Then copy the accepted PRD into the Gitea epic issue in Stage 3.
+Then copy the accepted PRD into the Gitea epic issue in Stage 4.
 
 ### Gitea label namespace
 
@@ -284,12 +441,15 @@ Produce the PRD/spec content only. Do not publish to an issue tracker yet. This 
 
 The PRD should explicitly say:
 
+- The actor is an operator.
 - The app is read-only.
+- The app displays one configured project; there is no project-selection UI.
 - The first tracer uses checked-in fixture data.
 - No secrets are committed.
 - No writes are made to Vikunja.
 - The UI shows columns and cards from one project.
 - The feature is complete only when a human can see a board-like view and a test can verify the rendered columns/cards.
+- The later live-fetch tracer uses mocked API responses in automated tests; the real Vikunja instance is manual-smoke only.
 
 ### 3. Break the PRD into tracer tickets with `/to-tickets`
 
@@ -303,12 +463,12 @@ Important adjustment for this manual pass:
 
 - The installed `/to-tickets` skill can publish either local markdown files or real tracker issues, depending on setup.
 - For Stage 2, ask for the proposed ticket breakdown only.
-- In Stage 3, manually create the Gitea epic and tracer issues from the approved breakdown.
+- In Stage 4, manually create the Gitea epic and tracer issues from the approved breakdown.
 
 Use this instruction with `/to-tickets`:
 
 ```text
-Break the Vikunja kanban viewer PRD into two or three tracer-bullet tickets. Do not publish them yet. Show the ticket titles, blocking edges, delivered behavior, and acceptance criteria so I can manually create the Gitea issues in Stage 3.
+Break the Vikunja kanban viewer PRD into two or three tracer-bullet tickets. Do not publish them yet. Show the ticket titles, blocking edges, delivered behavior, and acceptance criteria so I can manually create the Gitea issues in Stage 4.
 ```
 
 Suggested tracer bullets if the skill output needs steering:
@@ -373,7 +533,112 @@ git push
 - The first tracer is fixture-backed, narrow, demoable, and independently testable.
 - The tracer breakdown came from the installed Matt Pocock Skills flow: `/grill-me`, `/to-spec`, then `/to-tickets`.
 
-## Stage 3 - Promote PRD And Tracers Into Gitea
+## Stage 3 - Codex Creates The Baseline Practice App
+
+Goal: create the minimal runnable app and test harness before tracer work starts.
+
+This stage is automatic Codex setup, not part of the tracer experiment. It creates the development surface that tracer 1 will modify.
+
+### 1. Work in the practice repo
+
+```bash
+cd /Users/jmath/Documents/code/skinet-test-tracer
+git checkout main
+git pull --ff-only
+```
+
+If the repo has only README/docs content, Codex should scaffold the app at the repository root. If the Vite generator refuses a non-empty directory, Codex should scaffold in a temporary directory and copy the generated app files into the repo root without deleting the existing `docs/prd` content.
+
+### 2. Create the baseline app
+
+Codex creates:
+
+```text
+Vite + React + TypeScript app
+Playwright configuration
+unit/smoke test setup
+```
+
+Required scripts in `package.json`:
+
+```json
+{
+  "scripts": {
+    "dev": "...",
+    "build": "...",
+    "test": "...",
+    "test:e2e": "..."
+  }
+}
+```
+
+The exact commands can follow Vite, Vitest, and Playwright defaults, but these script names are the stable contract for later tracer issues.
+
+### 3. Add baseline smoke tests
+
+Baseline tests should prove only that the generated app works:
+
+- `npm test` runs a lightweight non-board smoke test.
+- `npm run test:e2e` opens the app and verifies the default baseline page loads.
+
+Baseline tests must not mention:
+
+- Vikunja
+- kanban
+- board columns
+- cards
+- fixture data
+- API calls
+
+### 4. Prove the baseline
+
+Codex runs:
+
+```bash
+npm run build
+npm test
+npm run test:e2e
+```
+
+All three must pass before Stage 4.
+
+### 5. Commit and push the baseline
+
+```bash
+git add .
+git commit -m 'Add Vite React baseline for harness tracer'
+git push
+```
+
+Record the baseline commit SHA in the PRD or a short setup note:
+
+```text
+docs/prd/vikunja-kanban-viewer.md
+```
+
+Suggested note:
+
+```markdown
+## Baseline setup
+
+Codex created the Vite React TypeScript + Playwright baseline before tracer work.
+Baseline commit: <sha>
+Baseline proof:
+- npm run build
+- npm test
+- npm run test:e2e
+```
+
+### Stage 3 exit criteria
+
+- The practice repo has a committed Vite React TypeScript baseline.
+- Playwright is installed and configured.
+- `npm run build`, `npm test`, and `npm run test:e2e` pass.
+- No Vikunja, board, fixture, or API code exists yet.
+- The baseline commit is pushed.
+- The baseline is explicitly outside the tracer 1 evidence boundary.
+
+## Stage 4 - Promote PRD And Tracers Into Gitea
 
 Goal: make Gitea the canonical source of truth.
 
@@ -487,13 +752,21 @@ Render a read-only kanban board from checked-in fixture JSON.
 ## Acceptance criteria
 
 - The app displays at least three columns from fixture data.
-- Each column displays its cards from fixture data.
+- At least one column displays at least two cards from fixture data.
+- Card titles are visible.
+- Optional assignee and due-date metadata are visible when present.
+- The board is usable at desktop and mobile widths.
 - The UI can be run locally without Vikunja credentials.
 - No live Vikunja API request is made.
+- No request is made to a Vikunja host or `/api/` path.
 
 ## Proof
 
-- A browser or Playwright check can verify that expected column and card text is visible.
+- `npm run build` passes.
+- `npm test` passes.
+- `npm run test:e2e` passes.
+- A Playwright feature test verifies the project title, all three column titles, and at least one expected card under the expected column.
+- A Playwright feature test fails if the app attempts a Vikunja/API request.
 
 ## Blocked by
 
@@ -565,7 +838,9 @@ Load a configured Vikunja project through a read-only API path using environment
 - Credentials are read only from environment or local ignored config.
 - No credentials are committed.
 - The app makes no write requests to Vikunja.
+- Automated tests use mocked Vikunja API responses.
 - Failure to reach Vikunja displays the error state from the previous tracer.
+- The real self-hosted Vikunja instance is manual-smoke only.
 
 ## Blocked by
 
@@ -573,7 +848,7 @@ Load a configured Vikunja project through a read-only API path using environment
 - Empty, loading, and error states
 ```
 
-### Stage 3 exit criteria
+### Stage 4 exit criteria
 
 - Gitea has one epic issue.
 - Gitea has two or three tracer issues.
@@ -581,7 +856,7 @@ Load a configured Vikunja project through a read-only API path using environment
 - Later tracers are blocked visibly, either by native dependency links, markdown sections, or both.
 - `feature/vikunja-kanban-viewer` exists on the remote.
 
-## Stage 4 - Create The First Frozen Agent Issue
+## Stage 5 - Create The First Frozen Agent Issue
 
 Goal: manually create the execution contract for tracer 1.
 
@@ -601,7 +876,7 @@ Replace `N` with the real Gitea issue number for "Fixture-backed board shell".
 
 Template:
 
-```markdown
+````markdown
 ---
 canonical_issue: gitea://appliedsci.tail90eacc.ts.net/gitea_admin/skinet-test-tracer/issues/N
 parent_prd: gitea://appliedsci.tail90eacc.ts.net/gitea_admin/skinet-test-tracer/issues/1
@@ -649,8 +924,9 @@ forbidden_paths:
   - infra/prod/**
 
 required_commands:
+  - npm run build
   - npm test
-  - npx playwright test
+  - npm run test:e2e
 ---
 
 # Fixture-backed board shell
@@ -665,12 +941,38 @@ If generated Tenet run artifacts conflict with this file, obey this file and reg
 
 Render a read-only kanban board from checked-in fixture JSON.
 
+Use an app-owned normalized fixture model, not raw Vikunja API JSON.
+
+```ts
+type BoardFixture = {
+  project: {
+    id: string;
+    title: string;
+  };
+  columns: Array<{
+    id: string;
+    title: string;
+    cards: Array<{
+      id: string;
+      title: string;
+      description?: string;
+      assignee?: string;
+      dueDate?: string;
+    }>;
+  }>;
+};
+```
+
 ## Acceptance Criteria
 
 - The app displays at least three columns from fixture data.
-- Each column displays its cards from fixture data.
+- At least one column displays at least two cards from fixture data.
+- Card titles are visible.
+- Optional assignee and due-date metadata are visible when present.
+- The board is usable at desktop and mobile widths through horizontal scroll or stacked columns.
 - The UI can be run locally without Vikunja credentials.
 - No live Vikunja API request is made.
+- No request is made to a Vikunja host or `/api/` path.
 
 ## Non-Goals
 
@@ -678,12 +980,27 @@ Render a read-only kanban board from checked-in fixture JSON.
 - No card editing.
 - No drag and drop.
 - No authentication flow.
+- No project-selection UI.
+- No card details modal.
+- No filtering.
+- No swimlanes, labels, comments, or attachments.
+- No custom design system, animations, dark mode, or Vikunja branding fidelity.
+
+## Tooling Boundary
+
+The baseline Vite React TypeScript and Playwright setup already exists before this tracer starts.
+
+This tracer may add feature code and feature tests. It must not rewrite the package manager, test runner, Playwright config shape, Vite config shape, or baseline smoke test semantics unless the baseline is proven wrong.
 
 ## Proof Expectations
 
-- A browser or Playwright check verifies expected column and card text is visible.
+- `npm run build` passes.
+- `npm test` passes.
+- `npm run test:e2e` passes.
+- A Playwright feature test verifies project title, all three column titles, and at least one expected card under the expected column.
+- A Playwright feature test fails if the app attempts a Vikunja/API request.
 - The implementation does not require any secret or live service.
-```
+````
 
 Commit this snapshot only after checking that it matches the Gitea issue:
 
@@ -694,14 +1011,14 @@ git commit -m 'Add frozen agent issue for fixture board shell'
 git push -u origin agent/issue-N-fixture-board-shell
 ```
 
-### Stage 4 exit criteria
+### Stage 5 exit criteria
 
 - The frozen agent issue exists in the practice repo.
 - Its frontmatter names exact future Tenet artifact paths.
 - Gitea remains canonical; the local file is a snapshot.
 - No Tenet job has been started.
 
-## Stage 5 - Prepare Tenet Artifacts But Do Not Start Tenet
+## Stage 6 - Prepare Tenet Artifacts But Do Not Start Tenet
 
 Goal: prove the exact Tenet-compatible artifact layout without invoking implementation.
 
@@ -737,6 +1054,8 @@ gitea://appliedsci.tail90eacc.ts.net/gitea_admin/skinet-test-tracer/issues/N
 
 The parent PRD is planning context only.
 The frozen agent issue is the execution contract for this attempt.
+
+The Vite React TypeScript + Playwright baseline already exists and is outside the tracer evidence boundary.
 ```
 
 ### scenarios.md
@@ -747,14 +1066,18 @@ The frozen agent issue is the execution contract for this attempt.
 ## Acceptance scenarios
 
 - Given checked-in board fixture data, when the app loads, then at least three board columns are visible.
-- Given a column with cards, when the board renders, then the card titles are visible under the correct column.
+- Given a column with at least two cards, when the board renders, then those card titles are visible under the correct column.
+- Given optional card assignee and due-date metadata, when present, then the metadata is visible.
 - Given no Vikunja credentials, when the app runs, then the fixture-backed board still renders.
+- Given the app is rendering tracer 1, when Playwright observes network traffic, then no request is made to a Vikunja host or `/api/` path.
 
 ## Anti-scenarios
 
 - The app must not call the live Vikunja API.
 - The app must not require secrets.
 - The app must not implement drag and drop or mutation behavior.
+- The app must not add project selection.
+- The app must not rewrite baseline Vite or Playwright tooling unless the baseline is proven wrong.
 ```
 
 ### harness.md
@@ -765,8 +1088,9 @@ The frozen agent issue is the execution contract for this attempt.
 ## Required commands
 
 ```bash
+npm run build
 npm test
-npx playwright test
+npm run test:e2e
 ```
 
 ## Forbidden paths
@@ -775,6 +1099,12 @@ npx playwright test
 - `.env.*`
 - `secrets/**`
 - `infra/prod/**`
+
+## Baseline boundary
+
+The Vite React TypeScript + Playwright baseline was created before this tracer. It is not part of tracer success evidence.
+
+Tracer work may add feature code, fixture data, and feature tests. It must not rewrite the package manager, test runner, Playwright config shape, Vite config shape, or baseline smoke test semantics unless the baseline is proven wrong.
 
 ## Merge policy
 
@@ -844,7 +1174,7 @@ git commit -m 'Prepare Tenet artifacts for fixture board shell'
 git push
 ```
 
-### Stage 5 exit criteria
+### Stage 6 exit criteria
 
 - The Tenet run directory exists.
 - The shim artifacts exist.
