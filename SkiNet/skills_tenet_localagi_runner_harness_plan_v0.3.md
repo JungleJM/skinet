@@ -1079,6 +1079,8 @@ proof_runner_capabilities:
   can_bind_local_preview_server: true | false
   can_launch_browser: true | false
   requires_elevated_sandbox_for_browser: true | false
+  last_probed_on_host: hostname-or-runner-id
+  probe_command: string
   supported_preview_url_schemes:
     - localhost
     - tailnet
@@ -1088,9 +1090,24 @@ proof_runner_capabilities:
 Security policy:
 
 - Default build, unit test, code critic, and semantic critic work should stay in the safest viable sandbox.
-- Browser proof may use a separate explicitly authorized runner mode when the platform requires it.
+- Browser proof must try the safest configured runner mode first on each host class.
+- If the safe-mode proof passes, do not use elevated sandbox for that host.
+- If safe-mode proof fails with a known browser/runtime sandbox signature, the controller may retry once with an explicitly authorized elevated proof runner.
 - On macOS with current Codex behavior, full Playwright proof may require `danger-full-access`; treat that as a temporary runner policy exception, not a core architecture decision.
 - The controller must record the proof runner mode in the evidence bundle.
+- The controller must record both attempts when it escalates: safe-mode failure evidence and elevated-mode pass/fail evidence.
+
+Host probing rule:
+
+```text
+For every proof-runner host or runner image:
+  1. run a minimal browser capability probe in safe mode
+  2. if it passes, mark elevated mode unnecessary
+  3. if it fails with a classified sandbox/browser-launch failure, retry with elevated mode if policy allows
+  4. store the capability result by host identity, OS, runner image, Codex/Tenet version, and Playwright browser version
+```
+
+Linux runners may not need the macOS `danger-full-access` exception. The harness should discover that by probe, not by hard-coded OS assumptions.
 
 Preview-provider policy:
 
