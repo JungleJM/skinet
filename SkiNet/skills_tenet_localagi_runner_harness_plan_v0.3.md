@@ -1054,6 +1054,59 @@ classification:
 
 The controller may use agent-authored summaries to help humans understand the run, but it should base state changes on typed evidence fields.
 
+### Preview and browser-proof abstraction
+
+UX proof needs two separate abstractions:
+
+```text
+PreviewProvider = creates or locates a URL where the built app can be exercised
+ProofRunner = runs Playwright or another proof tool against that URL
+```
+
+Do not hard-code either one into the execution provider.
+
+The first local spike found these macOS/Codex facts:
+
+- Normal shell Playwright proof passes.
+- Codex `workspace-write` sandbox can reach a Tailscale preview URL with HTTP, but cannot reliably bind a local listener or launch Chromium.
+- Codex `danger-full-access` can run full Playwright proof, including the normal localhost flow where Playwright starts Vite itself.
+- A Tailscale URL is useful for this operator's headless/remote workflow, but it is not required once the proof runner has browser-capable permissions.
+
+Therefore the controller should model proof capabilities explicitly:
+
+```yaml
+proof_runner_capabilities:
+  can_bind_local_preview_server: true | false
+  can_launch_browser: true | false
+  requires_elevated_sandbox_for_browser: true | false
+  supported_preview_url_schemes:
+    - localhost
+    - tailnet
+    - deployment_preview
+```
+
+Security policy:
+
+- Default build, unit test, code critic, and semantic critic work should stay in the safest viable sandbox.
+- Browser proof may use a separate explicitly authorized runner mode when the platform requires it.
+- On macOS with current Codex behavior, full Playwright proof may require `danger-full-access`; treat that as a temporary runner policy exception, not a core architecture decision.
+- The controller must record the proof runner mode in the evidence bundle.
+
+Preview-provider policy:
+
+- Localhost must remain supported as the default portable path.
+- Tailscale/tailnet URLs are an adapter option for this operator environment and future headless-machine workflows.
+- If Tailscale is down, the harness should be able to fall back to localhost, LAN URL, CI preview deployment, static preview, or another configured provider.
+- Tailscale ACLs, MagicDNS names, and `tailscale serve` configuration belong in deployment/operator configuration, not the controller domain model.
+
+Near-term working assumption:
+
+```text
+Use Tailscale-based preview URLs for this operator's manual and early automated runs.
+Expect full Playwright E2E proof for web UI tracers.
+Run browser proof through a browser-capable proof runner, even if that runner is separate from the safer development/critic sandbox.
+```
+
 ---
 
 ## Failure Categories and Routing
