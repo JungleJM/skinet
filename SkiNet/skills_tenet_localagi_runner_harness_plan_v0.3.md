@@ -5,6 +5,7 @@
 This document defines a gradual build-out of a development harness over:
 
 - **Skills** for idea interrogation, PRD creation, tracer-bullet issue decomposition, and later respec workflows.
+- **SkiNet wrapper skills and controller operations** around the upstream Skills workflow, so Matt Pocock's chain can stay unmodified while SkiNet adds execution-provider registration, proof gates, evidence review, and authority-provider state transitions.
 - **An authority provider** as the canonical source of truth for feature intent, tracer state, dependencies, PRs, and merge history. The first adapter is Gitea/Forgejo-compatible; GitHub should be possible later without changing controller policy.
 - **A thin deterministic harness controller** for work eligibility, state transitions, execution artifact preparation, policy checks, proof gates, PR authorization, and safe merge decisions.
 - **An execution provider** for implementation and semantic evaluation of one frozen tracer contract at a time. The first adapter is Tenet; a future guarded development/review engine should be swappable behind the same controller-owned run contract.
@@ -32,6 +33,8 @@ Each stage adds one layer of complexity only after the prior layer works manuall
 **v0.3 replaceability revision:** provider replacement is now an explicit design goal, not just a desirable side effect. Authority-provider replacement means Gitea/Forgejo, GitHub, or another forge can back the same `AuthorityProvider` interface. Execution-provider replacement means Tenet, or a future guarded development/review engine, can back the same `ExecutionProvider` interface. The controller owns workflow policy; providers own translation to concrete APIs, artifact formats, and result schemas.
 
 **Tenet compatibility revision:** Skills plus the authority provider own specification and decomposition. The controller generates Tenet-compatible shim artifacts from a frozen agent issue and registers exactly one Tenet development job with exact artifact paths. Tenet must not re-interview, re-spec, or create a competing cross-issue DAG.
+
+**Skills-wrapper revision:** do not fork or heavily rewrite Matt Pocock's upstream chain. Treat `/grill-me`, `/to-spec`, `/to-tickets`, `/implement`, `/tdd`, and `/code-review` as composable human/agent workflow primitives. SkiNet-specific behavior belongs in wrapper skills and controller operations that call or surround those primitives. In particular, SkiNet's implementation step maps upstream `/implement` intent onto `ExecutionProvider` work, and SkiNet's acceptance step wraps upstream `/code-review` inside a broader deterministic evidence pipeline.
 
 **LocalAGI optional-adapter revision:** LocalAGI may provide a convenient UI, agent loop, MCP client, status view, and model/tool orchestration. It must not define controller schemas, run state, workflow semantics, artifact formats, retry behavior, or merge policy. If LocalAGI is deleted, the CLI and controller must still complete the same workflow.
 
@@ -82,7 +85,8 @@ The CLI is the primary interface. LocalAGI, if used, calls the controller throug
 
 | Component | Primary responsibility | Must not become |
 |---|---|---|
-| Skills | Interview, PRD, tracer decomposition, respec | Mutable runtime state store |
+| Upstream Pocock Skills | Interview, PRD, tracer decomposition, implementation workflow prompt, TDD prompt, two-axis code review | SkiNet-specific harness controller, Tenet adapter, PR automation, or mutable runtime state store |
+| SkiNet wrapper skills | Translate upstream skill outputs into frozen contracts, review evidence bundles, respec proposals, and failure recommendations | Canonical state store or hidden workflow engine |
 | Authority provider | Canonical intent, status, dependencies, PRs, merge history | Agent scratchpad or provider-specific policy engine |
 | Gitea/Forgejo adapter | First authority-provider implementation | Controller domain model |
 | GitHub adapter | Possible later authority-provider implementation | Reason to rewrite workflow policy |
@@ -93,6 +97,67 @@ The CLI is the primary interface. LocalAGI, if used, calls the controller throug
 | LocalAI | Serve local models behind stable APIs | Workflow state manager |
 | LocalRecall | Search documentation and historical context | Source of current issue/spec truth |
 | n8n | Triggers, notifications, external workflow glue | Canonical scheduler or merge authority |
+
+### Skills wrapper boundary
+
+Matt Pocock's Skills chain should remain portable and mostly upstream-compatible.
+
+The base chain is:
+
+```text
+/grill-me or /grill-with-docs
+  -> /to-spec
+  -> /to-tickets
+  -> /implement
+  -> /tdd
+  -> /code-review
+```
+
+SkiNet should not redefine this chain as a Tenet-only workflow. Instead, SkiNet adds wrapper skills and controller operations around it:
+
+```text
+Pocock planning skills
+  -> authority-provider tracer issues
+  -> SkiNet to-agent-issue wrapper
+  -> controller-owned frozen contract
+  -> ExecutionProvider.start_dev
+  -> deterministic gates and proof
+  -> execution-provider critics
+  -> Pocock /code-review as one review producer
+  -> SkiNet review-run-evidence wrapper
+  -> authority-provider state transition
+```
+
+The wrapper rule is:
+
+```text
+Generic Skills describe reasoning workflows.
+SkiNet wrappers translate workflow output into controller contracts.
+The controller validates and mutates state.
+Provider adapters execute concrete APIs.
+```
+
+This keeps Tenet replaceable. `/implement` should mean "advance this approved tracer through the configured execution provider," not "call Tenet." The first implementation of that execution provider is Tenet, but the skill-facing concept is provider-neutral.
+
+This also keeps review composable. `/code-review` should continue to answer the two questions it is good at:
+
+```text
+Does the diff follow project standards?
+Does the diff satisfy the spec?
+```
+
+SkiNet's final acceptance asks more:
+
+```text
+Did deterministic preflight pass?
+Did required UX proof reproduce?
+Did the execution-provider critics pass or produce classified findings?
+Did code review pass Standards and Spec?
+Did the PR/authority-provider integration produce the expected branch, PR, labels, comments, and audit links?
+Is the issue eligible for the next controller state?
+```
+
+Therefore `/code-review` is a review signal, not the whole acceptance gate.
 
 ### Provider-neutral domain model
 
@@ -273,7 +338,8 @@ For the first Tenet adapter, execution-provider artifacts are:
 This is the most important compatibility and safety rule.
 
 ```text
-Skills = interview, PRD creation, tracer decomposition, respec
+upstream Pocock Skills = interview, PRD creation, tracer decomposition, implementation prompt, TDD prompt, two-axis code review
+SkiNet wrapper skills = frozen-contract generation, execution-provider preparation, evidence review, failure triage, respec proposals
 authority provider = canonical planning state and cross-issue dependency graph
 Gitea/Forgejo adapter = first authority-provider implementation
 agent-issue snapshot = frozen execution contract for one attempt
@@ -289,6 +355,8 @@ LocalRecall = optional advisory retrieval over stable documentation and history
 Once a Skills-generated tracer issue exists in the authority provider:
 
 - Tenet must not re-interview, re-spec, or re-decompose it.
+- SkiNet must not require upstream Pocock Skills to know about Tenet, Gitea, PR Agent, LocalAGI, Playwright proof storage, or controller state transitions.
+- SkiNet-specific wrapper skills may propose contracts, reviews, and routing decisions, but controller policy must validate them before they affect canonical state.
 - LocalAGI memory must not be used to infer current issue status.
 - LocalAGI agent definitions must not contain workflow rules that are absent from the controller contract.
 - LocalRecall must not be used to locate a likely execution contract when an exact path exists.
@@ -369,6 +437,8 @@ CLI:
   harnessctl run-preflight
   harnessctl run-proof
   harnessctl start-eval
+  harnessctl run-code-review
+  harnessctl review-evidence
   harnessctl classify
   harnessctl create-pr
   harnessctl merge-if-allowed
@@ -381,6 +451,8 @@ MCP or REST:
   run_preflight
   run_proof
   start_eval
+  run_code_review
+  review_evidence
   classify_run
   create_pr_if_allowed
   merge_pr_if_policy_allows
@@ -914,6 +986,73 @@ runner_retry_budget: 2
 ```
 
 You can later raise `tenet_internal_max_retries` to `1`, but the runner's retry budget should remain the meaningful product decision-maker.
+
+---
+
+## Review and Evidence Pipeline
+
+SkiNet acceptance is broader than upstream `/code-review`.
+
+Use the review layers in this order:
+
+```text
+1. deterministic preflight
+2. required UX proof
+3. execution-provider critics
+4. upstream /code-review
+5. PR and authority-provider interoperability checks
+6. SkiNet review-run-evidence aggregation
+7. controller state transition
+```
+
+Layer ownership:
+
+| Layer | Owner | Purpose |
+|---|---|---|
+| deterministic preflight | controller scripts | Prove build, tests, typecheck, forbidden paths, and required commands |
+| UX proof | controller scripts | Prove the user-facing behavior reproduces with Playwright, traces, screenshots, and network assertions |
+| execution-provider critics | ExecutionProvider adapter | Run Tenet critics first, or a future provider's equivalent semantic critics |
+| upstream `/code-review` | Pocock Skills chain | Review Standards and Spec against the diff |
+| PR/authority-provider checks | AuthorityProvider adapter plus controller | Prove branch, PR, labels, dependency state, comments, and audit links are correct |
+| `review-run-evidence` | SkiNet wrapper skill | Summarize all evidence and unresolved risks without directly mutating state |
+| state transition | controller | Decide the only valid next status |
+
+PR Agent, if added, should be another evidence producer in this pipeline. It may review PR description quality, changed-file summary, labels, reviewer comments, or provider interoperability, but it should not own merge policy or canonical state.
+
+The final acceptance input should be an evidence bundle, not raw agent prose:
+
+```yaml
+run_id: issue-123-attempt-001
+contract_ref: docs/agent-issues/ISSUE-123.v1.md
+implementation_ref:
+  branch: agent/issue-123-login-form
+  commit: abc123
+preflight:
+  status: passed
+  artifacts:
+    - .tenet/runs/issue-123-attempt-001/gate/preflight.json
+proof:
+  status: passed
+  artifacts:
+    - .tenet/runs/issue-123-attempt-001/proof/playwright-report/
+execution_critics:
+  provider: tenet
+  status: passed
+  artifacts:
+    - .tenet/runs/issue-123-attempt-001/eval/critics.json
+code_review:
+  provider: pocock-code-review
+  standards: passed
+  spec: passed
+pr_interop:
+  status: passed
+  pr_key: null
+classification:
+  recommended_status: passed_critics
+  unresolved_risks: []
+```
+
+The controller may use agent-authored summaries to help humans understand the run, but it should base state changes on typed evidence fields.
 
 ---
 
@@ -1919,21 +2058,25 @@ provider_internal_max_retries: 0
 
 ---
 
-## Stage 19 — Add respec and specialized Skills
+## Stage 19 — Add SkiNet wrapper skills, respec, and specialized review
 
 ### Goal
 
-Repair bad tracer specifications and add reusable semantic workflows without moving authority into agent memory.
+Repair bad tracer specifications and add reusable semantic workflows without moving authority into agent memory or forking Matt Pocock's upstream chain.
 
 ### Additions
 
 ```text
 skills/engineering/to-agent-issue/SKILL.md
+skills/engineering/prepare-execution/SKILL.md
+skills/engineering/start-execution/SKILL.md
 skills/engineering/triage-tenet-failure/SKILL.md
 skills/engineering/triage-execution-failure/SKILL.md
 skills/engineering/to-respec-issue/SKILL.md
 skills/engineering/review-run-evidence/SKILL.md
 ```
+
+These are SkiNet wrapper skills. They may call, quote, or surround upstream `/implement`, `/tdd`, and `/code-review`, but they must not require those upstream skills to contain Tenet-specific, PR Agent-specific, or controller-specific behavior.
 
 ### Skill roles
 
@@ -1941,9 +2084,17 @@ skills/engineering/review-run-evidence/SKILL.md
 
 Generates the frozen snapshot and proposed execution-provider artifacts from the current canonical issue. The controller validates and commits the exact output paths and version. With the first Tenet adapter, those artifacts are Tenet shims.
 
+#### `prepare-execution`
+
+Turns a validated frozen contract into provider-neutral execution preparation. The controller owns the final artifact write and state transition. With the first Tenet adapter, this produces the `.tenet/runs/<run>/` shim files.
+
+#### `start-execution`
+
+Requests implementation through the configured `ExecutionProvider`. With the first adapter, this invokes Tenet job registration/start. A future guarded builder should satisfy the same wrapper contract without changing the upstream `/implement` skill.
+
 #### `triage-tenet-failure`
 
-Tenet-specific semantic failure recommendation skill for the first execution adapter.
+Tenet-specific semantic failure recommendation skill for the first execution adapter. This is adapter-specific and should be replaceable by `triage-execution-failure` once provider-neutral evidence is rich enough.
 
 #### `triage-execution-failure`
 
@@ -1955,13 +2106,14 @@ Proposes replacement issues when the tracer itself is wrong. The controller and 
 
 #### `review-run-evidence`
 
-Summarizes contract compliance, changed scope, tests, proof, critic output, and unresolved risks for a human or final frontier critic.
+Summarizes contract compliance, changed scope, tests, proof, execution-provider critic output, upstream `/code-review` output, PR/authority-provider interoperability, and unresolved risks for a human or final frontier critic.
 
 ### Exit criteria
 
 - Bad tracer bullets can be superseded without corrupting history.
 - Skills are reusable through frontier planning workflows, CLI/controller execution, and LocalAGI only where compatible without changing the canonical format.
 - Agent-generated proposals are validated before becoming canonical authority-provider changes.
+- Upstream Pocock Skills remain usable without SkiNet-specific Tenet, PR Agent, LocalAGI, or controller assumptions.
 
 ---
 
@@ -2189,13 +2341,16 @@ The actual safe workflow is:
 8. The execution provider performs development using the assigned frontier or LocalAI-backed model.
 9. Controller runs deterministic preflight.
 10. Controller runs required proof.
-11. Execution-provider critics and optional secondary reviewers run only after gates pass.
-12. Failure classifier recommends semantic routing; controller enforces valid state.
-13. Controller creates a feature-branch PR if all requirements pass.
-14. Controller auto-merges only when explicit low-risk policy allows.
-15. The authority provider records the canonical state and audit links.
-16. Dependents unblock only after confirmed feature-branch merge.
-17. Main remains human-reviewed and human-merged.
+11. Execution-provider critics run only after gates pass.
+12. Upstream `/code-review` runs as a Standards and Spec review signal.
+13. Optional PR Agent or secondary reviewers add PR/provider interoperability evidence.
+14. SkiNet `review-run-evidence` summarizes the typed evidence bundle.
+15. Failure classifier recommends semantic routing; controller enforces valid state.
+16. Controller creates a feature-branch PR if all requirements pass.
+17. Controller auto-merges only when explicit low-risk policy allows.
+18. The authority provider records the canonical state and audit links.
+19. Dependents unblock only after confirmed feature-branch merge.
+20. Main remains human-reviewed and human-merged.
 ```
 
 The operational shorthand is:
@@ -2203,6 +2358,8 @@ The operational shorthand is:
 ```text
 Humans, scripts, or optional adapters request.
 The controller validates.
+Upstream Skills help plan, implement, TDD, and code-review without owning state.
+SkiNet wrappers translate skill outputs into contracts, evidence, and recommendations.
 The execution provider executes and evaluates.
 LocalAI serves selected models.
 The authority provider records truth.
