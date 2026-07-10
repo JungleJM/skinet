@@ -2,6 +2,13 @@
 
 This runbook turns the first part of `skills_tenet_localagi_runner_harness_plan_v2.md` into a concrete manual path.
 
+This runbook intentionally uses the first concrete adapters:
+
+- authority provider: Gitea/Forgejo-compatible repository
+- execution provider: Tenet
+
+Do not treat the hard-coded `gitea://...` and `.tenet/...` examples here as the controller's provider-neutral schema. The harness plan defines the portable controller concepts and adapter seams; this runbook records one manual spike through those seams.
+
 Scope:
 
 - Use Matt Pocock Skills for planning.
@@ -17,7 +24,7 @@ Out of scope for this pass:
 - No LocalAI.
 - No LocalRecall.
 - No controller implementation.
-- No automation around Gitea state.
+- No automation around authority-provider state; Gitea is the concrete adapter in this runbook.
 - No Tenet job execution yet.
 - No credit for app scaffolding as part of the first tracer test.
 
@@ -97,7 +104,7 @@ Reason: this keeps Tenet practice artifacts, branches, and experimental app code
 
 Use a read-only Vikunja kanban board viewer as the first feature.
 
-Reason: Vikunja's API shape should be easier to constrain into two or three tracer bullets than a CalDAV calendar. CalDAV quickly introduces discovery, XML, auth variations, recurrence, timezone handling, and sync semantics. Those are useful later, but they are too noisy for the first Skills/Gitea/Tenet compatibility trial.
+Reason: Vikunja's API shape should be easier to constrain into two or three tracer bullets than a CalDAV calendar. CalDAV quickly introduces discovery, XML, auth variations, recurrence, timezone handling, and sync semantics. Those are useful later, but they are too noisy for the first Skills/authority-provider/execution-provider compatibility trial.
 
 Initial feature:
 
