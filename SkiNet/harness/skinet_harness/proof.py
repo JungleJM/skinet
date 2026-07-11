@@ -6,7 +6,7 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from .models import CommandEvidence, ProofEvidence, utc_now
+from .models import CommandEvidence, ProofEvidence, ProofRunnerProbeEvidence, utc_now
 from .preview import classify_preview_url
 
 
@@ -34,6 +34,14 @@ class RunProofRequest:
     safe_command: ProofCommand
     elevated_command: ProofCommand | None = None
     allow_elevated: bool = False
+
+
+@dataclass(frozen=True)
+class ProbeProofRunnerRequest:
+    run_id: str
+    repo: Path
+    preview_url: str | None
+    probe_command: ProofCommand
 
 
 def classify_failure(stdout: str, stderr: str) -> str:
@@ -119,6 +127,37 @@ def run_proof(request: RunProofRequest) -> ProofEvidence:
             "authorize_elevated_proof_runner"
             if safe_failure == "proof_runner_sandbox_blocked"
             else "route_to_product_or_test_failure"
+        ),
+    )
+
+
+def probe_proof_runner(request: ProbeProofRunnerRequest) -> ProofRunnerProbeEvidence:
+    attempt = execute_command(request.probe_command, request.repo, request.preview_url)
+    sandbox_blocked = attempt.failure_category == "proof_runner_sandbox_blocked"
+    status = "passed" if attempt.passed else "failed"
+    return ProofRunnerProbeEvidence(
+        run_id=request.run_id,
+        status=status,
+        preview=classify_preview_url(request.preview_url),
+        proof_runner={
+            "host": platform.node(),
+            "os": platform.platform(),
+            "probe_label": request.probe_command.label,
+        },
+        attempt=attempt,
+        capabilities={
+            "can_run_probe_command": attempt.passed,
+            "safe_mode_sandbox_blocked": sandbox_blocked,
+            "requires_elevated_sandbox_for_browser": sandbox_blocked,
+        },
+        recommended_next_action=(
+            "use_safe_proof_runner"
+            if attempt.passed
+            else (
+                "authorize_elevated_proof_runner"
+                if sandbox_blocked
+                else "inspect_probe_failure"
+            )
         ),
     )
 

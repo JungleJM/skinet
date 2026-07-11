@@ -73,3 +73,51 @@ class ProofEvidence:
             "attempts": [attempt.to_dict() for attempt in self.attempts],
             "recommended_next_action": self.recommended_next_action,
         }
+
+
+@dataclass(frozen=True)
+class ProofRunnerProbeEvidence:
+    run_id: str
+    status: str
+    preview: PreviewRef
+    proof_runner: dict[str, Any]
+    attempt: CommandEvidence
+    capabilities: dict[str, Any]
+    recommended_next_action: str
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.proof_runner_probe.v0",
+            "run_id": self.run_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "preview": self.preview.to_dict(),
+            "proof_runner": self.proof_runner,
+            "attempt": self.attempt.to_dict(),
+            "capabilities": self.capabilities,
+            "recommended_next_action": self.recommended_next_action,
+        }
+
+
+@dataclass(frozen=True)
+class EvidenceBundle:
+    run_id: str
+    status: str
+    contract_ref: str | None
+    implementation_ref: dict[str, Any]
+    artifacts: dict[str, Any]
+    recommended_next_action: str
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.evidence_bundle.v0",
+            "run_id": self.run_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "contract_ref": self.contract_ref,
+            "implementation_ref": self.implementation_ref,
+            "artifacts": self.artifacts,
+            "recommended_next_action": self.recommended_next_action,
+        }
