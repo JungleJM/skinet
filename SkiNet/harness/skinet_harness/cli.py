@@ -6,6 +6,7 @@ from pathlib import Path
 
 from .bundle import build_evidence_bundle
 from .evidence import write_evidence
+from .preflight import PreflightCommand, RunPreflightRequest, run_preflight
 from .proof import (
     ProbeProofRunnerRequest,
     ProofCommand,
@@ -13,11 +14,36 @@ from .proof import (
     probe_proof_runner,
     run_proof,
 )
+from .runs import DEFAULT_RUN_ROOT, InitRunRequest, default_evidence_dir, init_run, run_dir
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="harnessctl")
     subcommands = parser.add_subparsers(dest="command", required=True)
+
+    init_parser = subcommands.add_parser(
+        "init-run",
+        help="Create a durable controller run directory and run metadata.",
+    )
+    init_parser.add_argument("--run-id", required=True)
+    init_parser.add_argument("--repo", required=True)
+    init_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
+    init_parser.add_argument("--contract-ref")
+    init_parser.add_argument("--branch")
+    init_parser.add_argument("--commit")
+    init_parser.add_argument("--out")
+
+    preflight_parser = subcommands.add_parser(
+        "run-preflight",
+        help="Run deterministic preflight commands and record structured evidence.",
+    )
+    preflight_parser.add_argument("--run-id", required=True)
+    preflight_parser.add_argument("--repo", required=True)
+    preflight_parser.add_argument("--command", action="append", dest="commands", required=True)
+    preflight_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
+    preflight_parser.add_argument("--keep-going", action="store_true")
+    preflight_parser.add_argument("--out")
+    preflight_parser.add_argument("--evidence-dir")
 
     run_proof_parser = subcommands.add_parser(
         "run-proof",
@@ -31,6 +57,7 @@ def build_parser() -> argparse.ArgumentParser:
     run_proof_parser.add_argument("--elevated-command")
     run_proof_parser.add_argument("--elevated-label", default="elevated")
     run_proof_parser.add_argument("--allow-elevated", action="store_true")
+    run_proof_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     run_proof_parser.add_argument("--out")
     run_proof_parser.add_argument("--evidence-dir")
 
@@ -43,6 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     probe_parser.add_argument("--probe-command", required=True)
     probe_parser.add_argument("--probe-label", default="safe-probe")
     probe_parser.add_argument("--preview-url")
+    probe_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     probe_parser.add_argument("--out")
     probe_parser.add_argument("--evidence-dir")
 
@@ -51,7 +79,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Create a run-level evidence bundle from collected evidence files.",
     )
     bundle_parser.add_argument("--run-id", required=True)
-    bundle_parser.add_argument("--evidence-dir", required=True)
+    bundle_parser.add_argument("--evidence-dir")
+    bundle_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     bundle_parser.add_argument("--contract-ref")
     bundle_parser.add_argument("--branch")
     bundle_parser.add_argument("--commit")
@@ -63,6 +92,41 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if args.command == "init-run":
+        evidence = init_run(
+            InitRunRequest(
+                run_id=args.run_id,
+                repo=Path(args.repo),
+                run_root=Path(args.run_root),
+                contract_ref=args.contract_ref,
+                branch=args.branch,
+                commit=args.commit,
+            )
+        )
+        emit_evidence(evidence, args.out, None, "run.json")
+        return 0
+
+    if args.command == "run-preflight":
+        commands = [
+            PreflightCommand(label=f"command-{index}", command=command)
+            for index, command in enumerate(args.commands, start=1)
+        ]
+        evidence = run_preflight(
+            RunPreflightRequest(
+                run_id=args.run_id,
+                repo=Path(args.repo),
+                commands=commands,
+                stop_on_failure=not args.keep_going,
+            )
+        )
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "gate"),
+            "preflight.json",
+        )
+        return 0 if evidence.status == "passed" else 1
 
     if args.command == "run-proof":
         request = RunProofRequest(
@@ -78,7 +142,12 @@ def main(argv: list[str] | None = None) -> int:
             allow_elevated=args.allow_elevated,
         )
         evidence = run_proof(request)
-        emit_evidence(evidence, args.out, args.evidence_dir, "proof.json")
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "proof"),
+            "proof.json",
+        )
         return 0 if evidence.status == "passed" else 1
 
     if args.command == "probe-proof-runner":
@@ -89,18 +158,24 @@ def main(argv: list[str] | None = None) -> int:
             probe_command=ProofCommand(label=args.probe_label, command=args.probe_command),
         )
         evidence = probe_proof_runner(request)
-        emit_evidence(evidence, args.out, args.evidence_dir, "proof-runner-probe.json")
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "proof"),
+            "proof-runner-probe.json",
+        )
         return 0 if evidence.status == "passed" else 1
 
     if args.command == "bundle-evidence":
+        evidence_dir = Path(args.evidence_dir) if args.evidence_dir else run_dir(Path(args.run_root), args.run_id)
         evidence = build_evidence_bundle(
             run_id=args.run_id,
-            evidence_dir=Path(args.evidence_dir),
+            evidence_dir=evidence_dir,
             contract_ref=args.contract_ref,
             branch=args.branch,
             commit=args.commit,
         )
-        emit_evidence(evidence, args.out, args.evidence_dir, "evidence-bundle.json")
+        emit_evidence(evidence, args.out, str(evidence_dir), "evidence-bundle.json")
         return 0 if evidence.status == "passed" else 1
 
     parser.error(f"unknown command: {args.command}")
@@ -115,3 +190,14 @@ def emit_evidence(evidence, out: str | None, evidence_dir: str | None, filename:
         write_evidence(evidence, Path(evidence_dir) / filename)
     else:
         print(output)
+
+
+def resolve_evidence_dir(
+    evidence_dir: str | None,
+    run_root: str,
+    run_id: str,
+    evidence_kind: str,
+) -> str:
+    if evidence_dir:
+        return evidence_dir
+    return str(default_evidence_dir(Path(run_root), run_id, evidence_kind))

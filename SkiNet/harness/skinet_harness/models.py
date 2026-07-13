@@ -53,6 +53,52 @@ class CommandEvidence:
 
 
 @dataclass(frozen=True)
+class RunMetadata:
+    run_id: str
+    repo: str
+    contract_ref: str | None
+    branch: str | None
+    commit: str | None
+    run_dir: str
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.run_metadata.v0",
+            "run_id": self.run_id,
+            "created_at": self.created_at,
+            "repo": self.repo,
+            "contract_ref": self.contract_ref,
+            "implementation_ref": {
+                "branch": self.branch,
+                "commit": self.commit,
+            },
+            "run_dir": self.run_dir,
+        }
+
+
+@dataclass(frozen=True)
+class PreflightEvidence:
+    run_id: str
+    status: str
+    repo: str
+    commands: list[CommandEvidence] = field(default_factory=list)
+    recommended_next_action: str | None = None
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.preflight_evidence.v0",
+            "run_id": self.run_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "repo": self.repo,
+            "commands": [command.to_dict() for command in self.commands],
+            "recommended_next_action": self.recommended_next_action,
+        }
+
+
+@dataclass(frozen=True)
 class ProofEvidence:
     run_id: str
     status: str
@@ -105,6 +151,7 @@ class EvidenceBundle:
     run_id: str
     status: str
     contract_ref: str | None
+    run_metadata: dict[str, Any] | None
     implementation_ref: dict[str, Any]
     artifacts: dict[str, Any]
     recommended_next_action: str
@@ -117,6 +164,7 @@ class EvidenceBundle:
             "status": self.status,
             "created_at": self.created_at,
             "contract_ref": self.contract_ref,
+            "run_metadata": self.run_metadata,
             "implementation_ref": self.implementation_ref,
             "artifacts": self.artifacts,
             "recommended_next_action": self.recommended_next_action,
