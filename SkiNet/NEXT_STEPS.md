@@ -177,7 +177,12 @@ Rerun strategy:
 
 - Start from the same PRD, not from the previous implementation.
 - Prefer re-generating tracer bullets from `docs/prd/vikunja-kanban-viewer.md` so the harness proves the planning-to-development path.
-- Use the archived `ISSUE-2.v1.md` only as comparison evidence: did the new tracer split match the old fixture-backed board shell boundary, acceptance criteria, proof requirements, and non-goals?
+- Build the new tracer split using the `to-tickets` vertical-slice rules as the primary rubric:
+  - each slice must cut a narrow but complete path through every relevant layer;
+  - each slice must be demoable or verifiable on its own;
+  - each slice must fit in a single fresh context window;
+  - any prefactoring must be sequenced first rather than hidden inside the slice.
+- Use the archived `ISSUE-2.v1.md` only as secondary comparison evidence: did the new tracer split preserve the old fixture-backed board shell boundary, acceptance criteria, proof requirements, and non-goals where that older split was already sensible?
 - If tracer generation is not ready, fall back to reusing the archived tracer contract as the frozen input and prove only tracer-to-development automation.
 - In either path, require `run-red-gate` before any implementation change and `run-green-gate` after implementation.
 
@@ -188,7 +193,8 @@ Proof to produce:
 - Development artifacts or diff created only after RED passes.
 - `gate/tdd-green.json` showing the same focused contract passes after implementation.
 - `gate/preflight.json`, proof JSON, and `evidence-bundle.json` showing the final deterministic evidence.
-- A short comparison against `docs/prior-attempts/issue-2-attempt-001/agent-issues/ISSUE-2.v1.md` explaining whether the new split preserved the same intended tracer.
+- A short rubric review of the new slice against the `to-tickets` vertical-slice rules.
+- A short comparison against `docs/prior-attempts/issue-2-attempt-001/agent-issues/ISSUE-2.v1.md` explaining where the new split agrees with, improves on, or intentionally diverges from the older tracer.
 
 ## Milestone 2: Tenet Shim Artifact Generation
 
