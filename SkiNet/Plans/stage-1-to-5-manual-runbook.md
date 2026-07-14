@@ -1,6 +1,6 @@
 # Stage 1-6 Manual Runbook
 
-This runbook turns the first part of `skills_tenet_localagi_runner_harness_plan_v0.3.md` into a concrete manual path.
+This runbook records the manual spike that informed the current plan in `SkiNet/SkiNet_plan_v0.035.md`.
 
 This runbook intentionally uses the first concrete adapters:
 

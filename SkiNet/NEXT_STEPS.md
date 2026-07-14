@@ -140,6 +140,56 @@ Success condition:
 
 - All harness tests pass.
 
+## Priority Feature: TDD RED/GREEN Gates
+
+- Status: next
+- Goal: enforce TDD chronology before any execution provider writes implementation code.
+- Add `run-red-gate`.
+- Add `run-green-gate`.
+- Write `gate/tdd-red.json`.
+- Write `gate/tdd-green.json`.
+- Refuse `start-dev` unless RED passed for the current snapshot.
+- Treat missing, post-hoc, or wrong-failure RED evidence as `tdd_chronology_gap`.
+- Require GREEN to run against the same focused tracer command/proof set as RED.
+- Bundle RED/GREEN evidence into `evidence-bundle.json`.
+- Prove the behavior against `skinet-test-tracer` before implementing broader Tenet execution.
+
+Done when:
+
+- A tracer can prove expected RED failure before implementation.
+- The controller blocks development when RED is missing or invalid.
+- The same tracer can prove GREEN success after implementation.
+- Unit tests cover RED pass/fail, wrong-failure RED, missing RED before start, and mismatched GREEN.
+- The trial repo rerun has committed artifacts showing RED before dev, GREEN after dev, and preflight/proof evidence.
+
+### Trial Rerun Plan
+
+- Repo: `/Users/jmath/Documents/code/skinet-test-tracer`
+- Remote: `ssh://git@appliedsci.tail90eacc.ts.net:411/gitea_admin/skinet-test-tracer.git`
+- Shared PRD input: `docs/prd/vikunja-kanban-viewer.md`
+- Archived prior attempt:
+  - `docs/prior-attempts/issue-2-attempt-001/agent-issues/ISSUE-2.v1.md`
+  - `docs/prior-attempts/issue-2-attempt-001/tenet/run/`
+  - `docs/prior-attempts/issue-2-attempt-001/tenet/project/`
+  - `docs/prior-attempts/issue-2-attempt-001/tenet/status/`
+
+Rerun strategy:
+
+- Start from the same PRD, not from the previous implementation.
+- Prefer re-generating tracer bullets from `docs/prd/vikunja-kanban-viewer.md` so the harness proves the planning-to-development path.
+- Use the archived `ISSUE-2.v1.md` only as comparison evidence: did the new tracer split match the old fixture-backed board shell boundary, acceptance criteria, proof requirements, and non-goals?
+- If tracer generation is not ready, fall back to reusing the archived tracer contract as the frozen input and prove only tracer-to-development automation.
+- In either path, require `run-red-gate` before any implementation change and `run-green-gate` after implementation.
+
+Proof to produce:
+
+- A blocked `start-dev` attempt when `gate/tdd-red.json` is missing.
+- `gate/tdd-red.json` showing expected behavior failure before implementation.
+- Development artifacts or diff created only after RED passes.
+- `gate/tdd-green.json` showing the same focused contract passes after implementation.
+- `gate/preflight.json`, proof JSON, and `evidence-bundle.json` showing the final deterministic evidence.
+- A short comparison against `docs/prior-attempts/issue-2-attempt-001/agent-issues/ISSUE-2.v1.md` explaining whether the new split preserved the same intended tracer.
+
 ## Milestone 2: Tenet Shim Artifact Generation
 
 - Status: planned
@@ -149,10 +199,12 @@ Success condition:
   - `scenarios.md`
   - `harness.md`
   - `decomposition.md`
+  - `gate/tdd-red-plan.md`
 - Ensure `decomposition.md` is one-node only.
 - Treat these as compatibility shims, not canonical truth.
 - Validate exact paths.
 - Validate forbidden paths and required commands are present.
+- Validate that the RED plan maps to the tracer acceptance criteria and proof expectations.
 
 Done when:
 

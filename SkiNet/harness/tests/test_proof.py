@@ -18,6 +18,14 @@ from skinet_harness.proof import (
     run_proof,
 )
 from skinet_harness.runs import InitRunRequest, init_run, run_dir
+from skinet_harness.tdd import (
+    RunTddGateRequest,
+    StartDevRequest,
+    TddCommand,
+    run_green_gate,
+    run_red_gate,
+    start_dev,
+)
 
 
 class PreviewClassificationTest(unittest.TestCase):
@@ -186,6 +194,132 @@ class EvidenceBundleTest(unittest.TestCase):
         self.assertEqual(bundle.recommended_next_action, "collect_missing_evidence")
 
 
+class TddGateTest(unittest.TestCase):
+    def test_red_gate_passes_when_expected_failure_occurs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence = run_red_gate(
+                RunTddGateRequest(
+                    run_id="tdd-red-1",
+                    repo=Path(tmp),
+                    run_dir=Path(tmp) / "runs" / "tdd-red-1",
+                    commands=[TddCommand("focused-test", "printf 'expected missing behavior' && exit 1")],
+                    expected_failure_texts=["expected missing behavior"],
+                )
+            )
+
+        self.assertEqual(evidence.status, "passed")
+        self.assertEqual(evidence.recommended_next_action, "allow_start_dev")
+
+    def test_red_gate_fails_when_commands_pass(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence = run_red_gate(
+                RunTddGateRequest(
+                    run_id="tdd-red-2",
+                    repo=Path(tmp),
+                    run_dir=Path(tmp) / "runs" / "tdd-red-2",
+                    commands=[TddCommand("focused-test", "true")],
+                )
+            )
+
+        self.assertEqual(evidence.status, "failed")
+        self.assertEqual(evidence.failure_category, "tdd_red_not_observed")
+
+    def test_start_dev_is_blocked_without_red_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            run_directory = Path(tmp) / "runs" / "start-dev-1"
+            run_directory.mkdir(parents=True)
+            evidence = start_dev(StartDevRequest(run_id="start-dev-1", run_dir=run_directory))
+
+        self.assertEqual(evidence.status, "failed")
+        self.assertEqual(evidence.failure_category, "tdd_red_missing")
+
+    def test_green_gate_requires_start_dev_and_matching_command_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runs"
+            run_id = "tdd-green-1"
+            metadata = init_run(
+                InitRunRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_root=root,
+                )
+            )
+            directory = Path(metadata.run_dir)
+            red = run_red_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_dir=directory,
+                    commands=[TddCommand("focused-test", "printf 'expected failure' && exit 1")],
+                    expected_failure_texts=["expected failure"],
+                )
+            )
+            write_evidence(red, directory / "gate" / "tdd-red.json")
+
+            blocked_green = run_green_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_dir=directory,
+                    commands=[TddCommand("focused-test", "true")],
+                )
+            )
+            self.assertEqual(blocked_green.status, "failed")
+            self.assertEqual(blocked_green.failure_category, "start_dev_not_authorized")
+
+            write_evidence(start_dev(StartDevRequest(run_id=run_id, run_dir=directory)), directory / "gate" / "start-dev.json")
+            mismatch_green = run_green_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_dir=directory,
+                    commands=[TddCommand("different-test", "true"), TddCommand("extra", "true")],
+                )
+            )
+
+        self.assertEqual(mismatch_green.status, "failed")
+        self.assertEqual(mismatch_green.failure_category, "tdd_command_mismatch")
+
+    def test_green_gate_passes_after_start_dev_when_same_command_set_passes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runs"
+            run_id = "tdd-green-2"
+            metadata = init_run(
+                InitRunRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_root=root,
+                )
+            )
+            directory = Path(metadata.run_dir)
+            repo = Path(tmp)
+            red_command = "test -f implemented.txt || (printf 'expected failure' && exit 1)"
+            red = run_red_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=repo,
+                    run_dir=directory,
+                    commands=[TddCommand("focused-test", red_command)],
+                    expected_failure_texts=["expected failure"],
+                )
+            )
+            write_evidence(red, directory / "gate" / "tdd-red.json")
+            write_evidence(start_dev(StartDevRequest(run_id=run_id, run_dir=directory)), directory / "gate" / "start-dev.json")
+            (repo / "implemented.txt").write_text("done\n", encoding="utf-8")
+
+            green = run_green_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=repo,
+                    run_dir=directory,
+                    commands=[TddCommand("focused-test", red_command)],
+                )
+            )
+
+        self.assertEqual(green.status, "passed")
+        self.assertEqual(green.recommended_next_action, "record_green_passed")
+
+
 class RunLedgerTest(unittest.TestCase):
     def test_init_run_writes_metadata_and_evidence_directories(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -263,6 +397,22 @@ class PreflightTest(unittest.TestCase):
         self.assertFalse(evidence.commands[0].passed)
         self.assertTrue(evidence.commands[1].passed)
 
+    def test_preflight_fails_when_required_artifact_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            evidence = run_preflight(
+                RunPreflightRequest(
+                    run_id="preflight-4",
+                    repo=Path(tmp),
+                    commands=[PreflightCommand("one", "true")],
+                    required_artifacts=[Path(tmp) / "missing.json"],
+                )
+            )
+
+        self.assertEqual(evidence.status, "failed")
+        self.assertEqual(evidence.commands, [])
+        self.assertEqual(evidence.artifact_checks[0]["status"], "missing")
+        self.assertEqual(evidence.recommended_next_action, "route_to_tdd_or_gate_failure")
+
     def test_cli_run_preflight_accepts_repeated_command_flags(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "runs"
@@ -333,6 +483,40 @@ class EvidenceBundleWithPreflightTest(unittest.TestCase):
         self.assertEqual(bundle.artifacts["run_metadata"]["status"], "present")
         self.assertEqual(bundle.artifacts["preflight"]["status"], "passed")
         self.assertEqual(bundle.artifacts["proof"]["status"], "passed")
+
+    def test_bundle_reads_tdd_artifacts_and_detects_chronology_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "runs"
+            run_id = "bundle-run-3"
+            metadata = init_run(
+                InitRunRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_root=root,
+                )
+            )
+            directory = Path(metadata.run_dir)
+            green = run_green_gate(
+                RunTddGateRequest(
+                    run_id=run_id,
+                    repo=Path(tmp),
+                    run_dir=directory,
+                    commands=[TddCommand("focused-test", "true")],
+                )
+            )
+            write_evidence(green, directory / "gate" / "tdd-green.json")
+
+            bundle = build_evidence_bundle(
+                run_id=run_id,
+                evidence_dir=directory,
+                contract_ref=None,
+                branch=None,
+                commit=None,
+            )
+
+        self.assertEqual(bundle.status, "failed")
+        self.assertEqual(bundle.artifacts["tdd_green"]["status"], "failed")
+        self.assertEqual(bundle.recommended_next_action, "route_to_tdd_chronology_failure")
 
     def test_bundle_fails_when_preflight_failed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

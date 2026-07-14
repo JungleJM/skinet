@@ -4,6 +4,8 @@ This directory contains the first production-oriented controller slice for SkiNe
 
 Current scope:
 
+- record controller-owned TDD gate evidence;
+- block development until RED evidence exists and passes;
 - record typed proof evidence;
 - classify preview URLs without hard-coding Tailscale;
 - probe proof-runner capability before deciding whether elevated mode is needed;
@@ -15,6 +17,28 @@ This is intentionally small and dependency-free while the controller domain mode
 Example:
 
 ```bash
+python3 SkiNet/harness/harnessctl.py run-red-gate \
+  --run-id issue-2-attempt-001 \
+  --repo /Users/jmath/Documents/code/skinet-test-tracer \
+  --command 'npm test -- --run tests/e2e/board.spec.ts' \
+  --expected-failure-text 'expected failure text'
+
+python3 SkiNet/harness/harnessctl.py start-dev \
+  --run-id issue-2-attempt-001
+
+python3 SkiNet/harness/harnessctl.py run-green-gate \
+  --run-id issue-2-attempt-001 \
+  --repo /Users/jmath/Documents/code/skinet-test-tracer \
+  --command 'npm test -- --run tests/e2e/board.spec.ts'
+
+python3 SkiNet/harness/harnessctl.py run-preflight \
+  --run-id issue-2-attempt-001 \
+  --repo /Users/jmath/Documents/code/skinet-test-tracer \
+  --require-passed-artifact gate/tdd-red.json \
+  --require-passed-artifact gate/start-dev.json \
+  --require-passed-artifact gate/tdd-green.json \
+  --command 'npm run build'
+
 python3 SkiNet/harness/harnessctl.py probe-proof-runner \
   --run-id issue-2-attempt-001 \
   --repo /Users/jmath/Documents/code/skinet-test-tracer \
@@ -44,6 +68,9 @@ If the safe command fails with a known sandbox/browser/listener signature and `-
 
 Evidence files:
 
+- `gate/tdd-red.json`
+- `gate/start-dev.json`
+- `gate/tdd-green.json`
 - `proof-runner-probe.json`
 - `proof.json`
 - `evidence-bundle.json`

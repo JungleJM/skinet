@@ -1,6 +1,6 @@
 # SkiNet Feature Status Map
 
-Source plan: `SkiNet/skills_tenet_localagi_runner_harness_plan_v0.3.md`
+Source plan: `SkiNet/SkiNet_plan_v0.035.md`
 
 Status terms:
 
@@ -8,8 +8,8 @@ Status terms:
 - `building`: partially implemented; active controller work
 - `manual proven`: proven manually; not automated in controller yet
 - `next`: agreed next implementation milestone
-- `planned`: in v0.3 plan; not implemented yet
-- `later`: explicitly deferred in v0.3
+- `planned`: in v0.035 plan; not implemented yet
+- `later`: explicitly deferred in v0.035
 
 ## 0. System Goal
 
@@ -174,7 +174,9 @@ Status terms:
 - Planned commands:
   - `inspect-feature`
   - `prepare-next`
+  - `run-red-gate`
   - `start-dev`
+  - `run-green-gate`
   - `get-run-state`
   - `start-eval`
   - `run-code-review`
@@ -202,6 +204,9 @@ Status terms:
   - `proof/proof-runner-probe.json`
   - `proof/proof.json`
   - `evidence-bundle.json`
+- Planned layout additions:
+  - `gate/tdd-red.json`
+  - `gate/tdd-green.json`
 - Legacy explicit `--evidence-dir` still supported.
 
 ## 9. Work Selection / Queue
@@ -224,15 +229,20 @@ Status terms:
 
 ## 10. TDD / Test Expectations
 
-- Status: `planned`
-- Skills may use `/tdd`.
-- Tracer contract should declare required tests/proof.
-- Desired discipline:
-  - RED: failing test/proof describes required behavior
-  - GREEN: implementation passes required checks
-  - REFACTOR: only after behavior/proof holds
+- Status: `next`
+- Upstream `/tdd` remains the seam/test-quality guide.
+- SkiNet wrapper `skinet-tdd-discipline` translates the frozen tracer into focused RED/GREEN evidence expectations.
+- Controller enforces chronology:
+  - RED gate runs before `start-dev`
+  - `start-dev` is refused unless RED passed for the current snapshot
+  - GREEN gate runs after implementation against the same tracer contract
+  - refactor/final checks run after GREEN
+- RED tests/proof must cover the complete tracer acceptance contract.
+- If the tracer cannot be represented by one focused RED set, split the tracer before implementation.
 - Controller does not trust claims.
-- Controller runs declared commands and records evidence.
+- Controller runs declared commands and records:
+  - `gate/tdd-red.json`
+  - `gate/tdd-green.json`
 
 ## 11. Preflight Gate
 
@@ -253,6 +263,10 @@ Status terms:
   - Tenet decomposition is one node
   - acceptance criteria present
   - required commands present
+  - `gate/tdd-red.json` exists for the current snapshot
+  - RED evidence predates development job registration/start
+  - `gate/tdd-green.json` exists for the current snapshot after implementation
+  - RED and GREEN reference the same focused tracer command/proof set
   - dependencies merged
   - branch naming valid
   - forbidden paths unchanged
@@ -311,11 +325,13 @@ Status terms:
   - `.tenet/runs/<run>/scenarios.md`
   - `.tenet/runs/<run>/harness.md`
   - `.tenet/runs/<run>/decomposition.md`
+  - `.tenet/runs/<run>/gate/tdd-red-plan.md`
 - Shim meanings:
   - `spec.md`: frozen issue plus PRD context and authority rules
   - `scenarios.md`: acceptance criteria, anti-scenarios, proof expectations
   - `harness.md`: commands, forbidden paths, testing doctrine, merge/budget policy
   - `decomposition.md`: one-node Tenet DAG only
+  - `tdd-red-plan.md`: focused expected-failure plan generated from the frozen tracer contract
 - Controller registers exactly one Tenet dev job.
 - Use low Tenet internal retries:
   - default `provider_internal_max_retries: 0`
@@ -343,6 +359,7 @@ Status terms:
   - code critic
   - test critic
   - interaction/e2e critic
+  - TDD chronology critic
 - Critic output normalized into structured evidence.
 - Critics are semantic signals, not final authority.
 
@@ -387,6 +404,8 @@ Status terms:
   - branch/commit ref
   - recommended next action
 - Planned bundle includes:
+  - TDD RED gate
+  - TDD GREEN gate
   - preflight
   - proof
   - execution-provider critics
@@ -409,6 +428,7 @@ Status terms:
   - `scope_conflict`
   - `forbidden_path_changed`
   - `missing_proof`
+  - `tdd_chronology_gap`
   - `dependency_blocked`
   - `budget_exceeded`
 - Deterministic failures assigned by scripts.
@@ -462,6 +482,7 @@ Status terms:
 - Status: `planned`
 - Planned wrapper skills:
   - `to-agent-issue`
+  - `skinet-tdd-discipline`
   - `prepare-execution`
   - `start-execution`
   - `triage-tenet-failure`

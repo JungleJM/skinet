@@ -15,6 +15,7 @@ from .proof import (
     run_proof,
 )
 from .runs import DEFAULT_RUN_ROOT, InitRunRequest, default_evidence_dir, init_run, run_dir
+from .tdd import RunTddGateRequest, StartDevRequest, TddCommand, run_green_gate, run_red_gate, start_dev
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -42,8 +43,43 @@ def build_parser() -> argparse.ArgumentParser:
     preflight_parser.add_argument("--command", action="append", dest="commands", required=True)
     preflight_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
     preflight_parser.add_argument("--keep-going", action="store_true")
+    preflight_parser.add_argument("--require-passed-artifact", action="append", dest="required_artifacts")
     preflight_parser.add_argument("--out")
     preflight_parser.add_argument("--evidence-dir")
+
+    red_gate_parser = subcommands.add_parser(
+        "run-red-gate",
+        help="Run focused failing tests/proof and record RED gate evidence.",
+    )
+    red_gate_parser.add_argument("--run-id", required=True)
+    red_gate_parser.add_argument("--repo", required=True)
+    red_gate_parser.add_argument("--command", action="append", dest="commands", required=True)
+    red_gate_parser.add_argument("--expected-failure-text", action="append", dest="expected_failure_texts")
+    red_gate_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
+    red_gate_parser.add_argument("--keep-going", action="store_true")
+    red_gate_parser.add_argument("--out")
+    red_gate_parser.add_argument("--evidence-dir")
+
+    start_dev_parser = subcommands.add_parser(
+        "start-dev",
+        help="Allow development to start only after a passing RED gate exists.",
+    )
+    start_dev_parser.add_argument("--run-id", required=True)
+    start_dev_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
+    start_dev_parser.add_argument("--out")
+    start_dev_parser.add_argument("--evidence-dir")
+
+    green_gate_parser = subcommands.add_parser(
+        "run-green-gate",
+        help="Run the same focused command set after implementation and record GREEN gate evidence.",
+    )
+    green_gate_parser.add_argument("--run-id", required=True)
+    green_gate_parser.add_argument("--repo", required=True)
+    green_gate_parser.add_argument("--command", action="append", dest="commands", required=True)
+    green_gate_parser.add_argument("--run-root", default=str(DEFAULT_RUN_ROOT))
+    green_gate_parser.add_argument("--keep-going", action="store_true")
+    green_gate_parser.add_argument("--out")
+    green_gate_parser.add_argument("--evidence-dir")
 
     run_proof_parser = subcommands.add_parser(
         "run-proof",
@@ -117,6 +153,10 @@ def main(argv: list[str] | None = None) -> int:
                 run_id=args.run_id,
                 repo=Path(args.repo),
                 commands=commands,
+                required_artifacts=[
+                    resolve_artifact_path(Path(args.run_root), args.run_id, artifact)
+                    for artifact in (args.required_artifacts or [])
+                ],
                 stop_on_failure=not args.keep_going,
             )
         )
@@ -125,6 +165,66 @@ def main(argv: list[str] | None = None) -> int:
             args.out,
             resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "gate"),
             "preflight.json",
+        )
+        return 0 if evidence.status == "passed" else 1
+
+    if args.command == "run-red-gate":
+        commands = [
+            TddCommand(label=f"command-{index}", command=command)
+            for index, command in enumerate(args.commands, start=1)
+        ]
+        evidence = run_red_gate(
+            RunTddGateRequest(
+                run_id=args.run_id,
+                repo=Path(args.repo),
+                commands=commands,
+                expected_failure_texts=args.expected_failure_texts,
+                stop_on_failure=not args.keep_going,
+                run_dir=run_dir(Path(args.run_root), args.run_id),
+            )
+        )
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "gate"),
+            "tdd-red.json",
+        )
+        return 0 if evidence.status == "passed" else 1
+
+    if args.command == "start-dev":
+        evidence = start_dev(
+            StartDevRequest(
+                run_id=args.run_id,
+                run_dir=run_dir(Path(args.run_root), args.run_id),
+            )
+        )
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "gate"),
+            "start-dev.json",
+        )
+        return 0 if evidence.status == "passed" else 1
+
+    if args.command == "run-green-gate":
+        commands = [
+            TddCommand(label=f"command-{index}", command=command)
+            for index, command in enumerate(args.commands, start=1)
+        ]
+        evidence = run_green_gate(
+            RunTddGateRequest(
+                run_id=args.run_id,
+                repo=Path(args.repo),
+                commands=commands,
+                stop_on_failure=not args.keep_going,
+                run_dir=run_dir(Path(args.run_root), args.run_id),
+            )
+        )
+        emit_evidence(
+            evidence,
+            args.out,
+            resolve_evidence_dir(args.evidence_dir, args.run_root, args.run_id, "gate"),
+            "tdd-green.json",
         )
         return 0 if evidence.status == "passed" else 1
 
@@ -201,3 +301,10 @@ def resolve_evidence_dir(
     if evidence_dir:
         return evidence_dir
     return str(default_evidence_dir(Path(run_root), run_id, evidence_kind))
+
+
+def resolve_artifact_path(run_root: Path, run_id: str, artifact: str) -> Path:
+    candidate = Path(artifact)
+    if candidate.is_absolute():
+        return candidate
+    return run_dir(run_root, run_id) / candidate

@@ -1,4 +1,4 @@
-# Skills + Provider-Neutral Harness Build Plan v0.3
+# Skills + Provider-Neutral Harness Build Plan v0.035
 
 ## Purpose
 
@@ -35,6 +35,8 @@ Each stage adds one layer of complexity only after the prior layer works manuall
 **Tenet compatibility revision:** Skills plus the authority provider own specification and decomposition. The controller generates Tenet-compatible shim artifacts from a frozen agent issue and registers exactly one Tenet development job with exact artifact paths. Tenet must not re-interview, re-spec, or create a competing cross-issue DAG.
 
 **Skills-wrapper revision:** do not fork or heavily rewrite Matt Pocock's upstream chain. Treat `/grill-me`, `/to-spec`, `/to-tickets`, `/implement`, `/tdd`, and `/code-review` as composable human/agent workflow primitives. SkiNet-specific behavior belongs in wrapper skills and controller operations that call or surround those primitives. In particular, SkiNet's implementation step maps upstream `/implement` intent onto `ExecutionProvider` work, and SkiNet's acceptance step wraps upstream `/code-review` inside a broader deterministic evidence pipeline.
+
+**v0.035 TDD gate revision:** SkiNet must enforce TDD chronology in the controller, not only suggest it in prompts. Before `ExecutionProvider.start_dev`, the wrapper/frontier model may propose behavior-focused tests and proof expectations, but the controller must run a deterministic RED gate and record expected-failure evidence. `start-dev` is refused unless `.tenet/runs/<run>/gate/tdd-red.json` proves that the focused tracer tests/proof fail for the right reason before implementation begins. After development, the controller runs a GREEN gate against the same declared contract and records `.tenet/runs/<run>/gate/tdd-green.json`. Stage 15 later audits the chronology and test quality; it does not retroactively create TDD evidence.
 
 **LocalAGI optional-adapter revision:** LocalAGI may provide a convenient UI, agent loop, MCP client, status view, and model/tool orchestration. It must not define controller schemas, run state, workflow semantics, artifact formats, retry behavior, or merge policy. If LocalAGI is deleted, the CLI and controller must still complete the same workflow.
 
@@ -120,7 +122,10 @@ Pocock planning skills
   -> authority-provider tracer issues
   -> SkiNet to-agent-issue wrapper
   -> controller-owned frozen contract
+  -> SkiNet TDD discipline wrapper proposes RED tests/proof
+  -> controller-owned RED gate
   -> ExecutionProvider.start_dev
+  -> controller-owned GREEN gate
   -> deterministic gates and proof
   -> execution-provider critics
   -> Pocock /code-review as one review producer
@@ -150,6 +155,8 @@ SkiNet's final acceptance asks more:
 
 ```text
 Did deterministic preflight pass?
+Did the RED gate pass before implementation with expected-failure evidence?
+Did the GREEN gate pass after implementation against the same tracer contract?
 Did required UX proof reproduce?
 Did the execution-provider critics pass or produce classified findings?
 Did code review pass Standards and Spec?
@@ -1377,6 +1384,8 @@ This stage is where the plan is modified for compatibility with Tenet's spec/art
   - `scenarios.md`
   - `harness.md`
   - `decomposition.md`
+- First TDD RED gate artifact:
+  - `gate/tdd-red.json`
 - One-job Tenet DAG.
 
 ### What changes from Stage 4
@@ -1427,17 +1436,40 @@ docs/agent-issues/ISSUE-123.v1.md
 4. Generate `scenarios.md` from acceptance criteria, anti-scenarios, and proof requirements.
 5. Generate `harness.md` from required commands, forbidden paths, testing doctrine, merge policy, and budget rules.
 6. Generate `decomposition.md` as a one-node DAG for only this tracer issue.
-7. Set Tenet internal retries low:
+7. Generate the focused TDD RED plan for this tracer:
+
+```text
+.tenet/runs/issue-123-attempt-001/gate/tdd-red-plan.md
+```
+
+The RED plan must cover the tracer's declared acceptance criteria, anti-scenarios, and proof expectations. If one focused RED set cannot represent the whole tracer, split the tracer before implementation.
+
+8. Run the controller-owned RED gate before any development job starts:
+
+```bash
+harnessctl run-red-gate --run issue-123-attempt-001
+```
+
+This writes:
+
+```text
+.tenet/runs/issue-123-attempt-001/gate/tdd-red.json
+```
+
+The gate passes only when the focused tests/proof fail for the expected missing behavior, not because of syntax errors, environment failures, stale fixtures, or unrelated broken tests.
+
+9. Refuse `start-dev` unless the RED gate passed.
+10. Set Tenet internal retries low:
 
 ```yaml
 tenet_internal_max_retries: 0
 ```
 
-8. Register exactly one Tenet `dev` job with exact artifact paths.
-9. Start the Tenet job.
-10. Use Codex or Claude only.
-11. Do not auto-merge.
-12. Do not introduce local models.
+11. Register exactly one Tenet `dev` job with exact artifact paths.
+12. Start the Tenet job.
+13. Use Codex or Claude only.
+14. Do not auto-merge.
+15. Do not introduce local models.
 
 ### Example direct registration shape
 
@@ -1459,7 +1491,7 @@ tenet_internal_max_retries: 0
       "name": "Implement Gitea issue 123",
       "type": "dev",
       "depends_on": [],
-      "prompt": "Implement only the frozen execution contract in docs/agent-issues/ISSUE-123.v1.md. Do not expand scope. Do not edit forbidden paths. If the contract is insufficient or conflicts with project doctrine, stop and report scope_conflict."
+      "prompt": "Implement only the frozen execution contract in docs/agent-issues/ISSUE-123.v1.md. Make the declared RED tests/proof and acceptance criteria pass with the smallest complete tracer implementation. Do not expand scope. Do not edit forbidden paths. If the contract is insufficient or conflicts with project doctrine, stop and report scope_conflict."
     }
   ]
 }
@@ -1471,6 +1503,7 @@ tenet_internal_max_retries: 0
 - Tenet did not create a competing feature spec or multi-job decomposition.
 - `.tenet/runs/<run>/` contains useful evidence/logs.
 - The run contains Tenet-compatible shim artifacts generated from the frozen agent issue.
+- `gate/tdd-red.json` proves expected failure before the development job was registered or started.
 - The working tree contains a proposed code change.
 
 ---
@@ -1501,6 +1534,20 @@ pnpm typecheck
 pnpm test
 npx playwright test
 ```
+
+Run the focused GREEN gate against the same tracer contract:
+
+```bash
+harnessctl run-green-gate --run issue-123-attempt-001
+```
+
+This writes:
+
+```text
+.tenet/runs/<run>/gate/tdd-green.json
+```
+
+The gate passes only when the previously RED behavior now passes, required refactor/final checks pass, and the implementation has not skipped acceptance criteria outside the focused command set.
 
 If proof is required, manually save evidence:
 
@@ -1717,7 +1764,9 @@ The workflow now has executable policy code, with no dependency on LocalAGI or a
 ```bash
 harnessctl inspect-feature --feature login
 harnessctl prepare-next --feature login
+harnessctl run-red-gate --run issue-123-attempt-001
 harnessctl start-dev --run issue-123-attempt-001
+harnessctl run-green-gate --run issue-123-attempt-001
 harnessctl get-run-state --run issue-123-attempt-001
 ```
 
@@ -1728,10 +1777,14 @@ harnessctl get-run-state --run issue-123-attempt-001
 3. Select only an eligible issue.
 4. Generate the frozen snapshot.
 5. Generate exact execution-provider artifacts.
-6. For the first Tenet adapter, validate that `decomposition.md` contains one job only.
-7. Register exactly one execution-provider development job with exact paths.
-8. Persist the selected run slug and snapshot version.
-9. Reject stale, blocked, or over-budget work.
+6. Generate or validate focused TDD RED plan metadata from the frozen tracer contract.
+7. Run the RED gate before implementation and persist `gate/tdd-red.json`.
+8. Refuse `start-dev` unless the RED gate passed for the current snapshot.
+9. For the first Tenet adapter, validate that `decomposition.md` contains one job only.
+10. Register exactly one execution-provider development job with exact paths.
+11. Run the GREEN gate after implementation and persist `gate/tdd-green.json`.
+12. Persist the selected run slug and snapshot version.
+13. Reject stale, blocked, over-budget, or TDD-chronology-invalid work.
 
 ### Selection algorithm
 
@@ -1828,7 +1881,9 @@ Run at least one end-to-end toy tracer with LocalAGI disabled:
 ```bash
 harnessctl inspect-feature --feature login
 harnessctl prepare-next --feature login
+harnessctl run-red-gate --run issue-123-attempt-001
 harnessctl start-dev --run issue-123-attempt-001
+harnessctl run-green-gate --run issue-123-attempt-001
 harnessctl run-preflight --run issue-123-attempt-001
 harnessctl run-proof --run issue-123-attempt-001
 harnessctl start-eval --run issue-123-attempt-001
@@ -1869,6 +1924,11 @@ Enforce mechanical facts before any semantic critic or PR action.
 - For the first Tenet adapter, Tenet shim artifacts exist.
 - For the first Tenet adapter, Tenet decomposition contains exactly one job.
 - Acceptance criteria and required commands are present.
+- `gate/tdd-red.json` exists for the current snapshot.
+- `gate/tdd-red.json` predates development job registration/start.
+- `gate/tdd-red.json` records expected failure for behavior covered by the tracer contract.
+- `gate/tdd-green.json` exists for the current snapshot after implementation.
+- The RED and GREEN gates reference the same tracer snapshot and focused command/proof set.
 - Dependencies are merged.
 - Branch naming policy is satisfied.
 - Forbidden paths are unchanged.
@@ -1888,6 +1948,8 @@ Enforce mechanical facts before any semantic critic or PR action.
     "snapshot_current": true,
     "execution_artifacts_found": true,
     "tenet_decomposition_is_one_node": true,
+    "tdd_red_predates_dev": true,
+    "tdd_green_matches_red_contract": true,
     "forbidden_paths_unchanged": false
   },
   "blocking_findings": [
@@ -1956,6 +2018,8 @@ canonical authority-provider issue
 frozen snapshot
 execution-provider artifacts
 merge-preflight.json
+tdd-red.json
+tdd-green.json
 proof JSON
 execution-provider critic findings
 run logs
@@ -1965,18 +2029,34 @@ changed files
 ### Classification output
 
 ```yaml
-primary_failure_category: product_bug | test_bug | harness_bug | evidence_mismatch | contention | scope_conflict | forbidden_path_changed | missing_proof | dependency_blocked | budget_exceeded
+primary_failure_category: product_bug | test_bug | harness_bug | evidence_mismatch | contention | scope_conflict | forbidden_path_changed | missing_proof | tdd_chronology_gap | dependency_blocked | budget_exceeded
 recommended_status: failed_retryable | blocked | needs_respec | awaiting_human_review | budget_exceeded | superseded | abandoned
 recommended_action: retry_same_issue | create_test_fix_issue | create_harness_fix_issue | create_blocker_issue | supersede_issue | stop_for_human
 ```
 
 The controller owns the final allowed state transition. The classifier supplies the semantic recommendation.
 
+### TDD chronology critic
+
+Add a default critic or classifier section that answers:
+
+```text
+Did RED run before implementation?
+Did RED fail for the expected missing behavior rather than broken setup?
+Did the RED contract cover the complete tracer acceptance criteria?
+Did GREEN rerun the same focused contract after implementation?
+Did refactor/final checks run after GREEN?
+Are any tests overfit to implementation details instead of behavior?
+```
+
+Weak or missing tests classify as `test_bug`. Missing chronology, impossible timestamps, or post-hoc RED evidence classify as `tdd_chronology_gap`. Contradictions between claimed and recorded evidence classify as `evidence_mismatch`.
+
 ### Exit criteria
 
 - Critics run only after gates pass.
 - Deterministic failure categories cannot be overridden by the classifier.
 - Ambiguous failures receive one normalized primary category.
+- TDD chronology and test adequacy are reviewed from recorded evidence, not accepted from agent claims.
 
 ---
 
@@ -2138,6 +2218,7 @@ Repair bad tracer specifications and add reusable semantic workflows without mov
 
 ```text
 skills/engineering/to-agent-issue/SKILL.md
+skills/engineering/skinet-tdd-discipline/SKILL.md
 skills/engineering/prepare-execution/SKILL.md
 skills/engineering/start-execution/SKILL.md
 skills/engineering/triage-tenet-failure/SKILL.md
@@ -2153,6 +2234,10 @@ These are SkiNet wrapper skills. They may call, quote, or surround upstream `/im
 #### `to-agent-issue`
 
 Generates the frozen snapshot and proposed execution-provider artifacts from the current canonical issue. The controller validates and commits the exact output paths and version. With the first Tenet adapter, those artifacts are Tenet shims.
+
+#### `skinet-tdd-discipline`
+
+Wraps upstream `/tdd` without editing it. It translates the frozen tracer contract into a focused RED plan, records the expected failing behavior, and later reviews GREEN/refactor evidence. It may ask a frontier model to propose tests and seams, but the controller decides whether `run-red-gate` and `run-green-gate` pass.
 
 #### `prepare-execution`
 
@@ -2406,21 +2491,24 @@ The actual safe workflow is:
 3. Controller builds the dependency graph and selects eligible work.
 4. Controller generates/version-checks the frozen agent-issue snapshot.
 5. Controller generates exact execution-provider artifacts.
-6. Controller registers exactly one development job.
-7. The CLI/controller path advances the run; LocalAGI may report runtime progress if enabled.
-8. The execution provider performs development using the assigned frontier or LocalAI-backed model.
-9. Controller runs deterministic preflight.
-10. Controller runs required proof.
-11. Execution-provider critics run only after gates pass.
-12. Upstream `/code-review` runs as a Standards and Spec review signal.
-13. Optional PR Agent or secondary reviewers add PR/provider interoperability evidence.
-14. SkiNet `review-run-evidence` summarizes the typed evidence bundle.
-15. Failure classifier recommends semantic routing; controller enforces valid state.
-16. Controller creates a feature-branch PR if all requirements pass.
-17. Controller auto-merges only when explicit low-risk policy allows.
-18. The authority provider records the canonical state and audit links.
-19. Dependents unblock only after confirmed feature-branch merge.
-20. Main remains human-reviewed and human-merged.
+6. SkiNet `skinet-tdd-discipline` wrapper prepares the focused RED plan from upstream `/tdd` guidance.
+7. Controller runs the RED gate and records expected-failure evidence.
+8. Controller registers exactly one development job only after RED passes.
+9. The CLI/controller path advances the run; LocalAGI may report runtime progress if enabled.
+10. The execution provider performs development using the assigned frontier or LocalAI-backed model.
+11. Controller runs the GREEN gate against the same tracer contract.
+12. Controller runs deterministic preflight.
+13. Controller runs required proof.
+14. Execution-provider critics run only after gates pass.
+15. Upstream `/code-review` runs as a Standards and Spec review signal.
+16. Optional PR Agent or secondary reviewers add PR/provider interoperability evidence.
+17. SkiNet `review-run-evidence` summarizes the typed evidence bundle.
+18. Failure classifier recommends semantic routing; controller enforces valid state.
+19. Controller creates a feature-branch PR if all requirements pass.
+20. Controller auto-merges only when explicit low-risk policy allows.
+21. The authority provider records the canonical state and audit links.
+22. Dependents unblock only after confirmed feature-branch merge.
+23. Main remains human-reviewed and human-merged.
 ```
 
 The operational shorthand is:

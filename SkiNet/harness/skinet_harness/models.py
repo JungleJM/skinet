@@ -83,6 +83,7 @@ class PreflightEvidence:
     status: str
     repo: str
     commands: list[CommandEvidence] = field(default_factory=list)
+    artifact_checks: list[dict[str, Any]] = field(default_factory=list)
     recommended_next_action: str | None = None
     created_at: str = field(default_factory=utc_now)
 
@@ -93,6 +94,7 @@ class PreflightEvidence:
             "status": self.status,
             "created_at": self.created_at,
             "repo": self.repo,
+            "artifact_checks": self.artifact_checks,
             "commands": [command.to_dict() for command in self.commands],
             "recommended_next_action": self.recommended_next_action,
         }
@@ -142,6 +144,62 @@ class ProofRunnerProbeEvidence:
             "proof_runner": self.proof_runner,
             "attempt": self.attempt.to_dict(),
             "capabilities": self.capabilities,
+            "recommended_next_action": self.recommended_next_action,
+        }
+
+
+@dataclass(frozen=True)
+class TddGateEvidence:
+    run_id: str
+    gate: str
+    status: str
+    repo: str
+    commands: list[CommandEvidence] = field(default_factory=list)
+    command_signature: str = ""
+    expected_failure_texts: list[str] = field(default_factory=list)
+    dependency_paths: dict[str, str] = field(default_factory=dict)
+    failure_category: str | None = None
+    recommended_next_action: str | None = None
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.tdd_gate_evidence.v0",
+            "run_id": self.run_id,
+            "gate": self.gate,
+            "status": self.status,
+            "created_at": self.created_at,
+            "repo": self.repo,
+            "command_signature": self.command_signature,
+            "expected_failure_texts": self.expected_failure_texts,
+            "dependency_paths": self.dependency_paths,
+            "failure_category": self.failure_category,
+            "commands": [command.to_dict() for command in self.commands],
+            "recommended_next_action": self.recommended_next_action,
+        }
+
+
+@dataclass(frozen=True)
+class StartDevEvidence:
+    run_id: str
+    status: str
+    run_dir: str
+    red_gate_path: str
+    red_gate_status: str
+    failure_category: str | None = None
+    recommended_next_action: str | None = None
+    created_at: str = field(default_factory=utc_now)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema": "skinet.start_dev_evidence.v0",
+            "run_id": self.run_id,
+            "status": self.status,
+            "created_at": self.created_at,
+            "run_dir": self.run_dir,
+            "red_gate_path": self.red_gate_path,
+            "red_gate_status": self.red_gate_status,
+            "failure_category": self.failure_category,
             "recommended_next_action": self.recommended_next_action,
         }
 

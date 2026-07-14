@@ -1,6 +1,6 @@
 # SkiNet Progress Handoff
 
-Last updated: 2026-07-11
+Last updated: 2026-07-13
 
 ## Purpose
 
@@ -16,13 +16,9 @@ The current design goal is to keep these boundaries replaceable:
 
 Primary design document:
 
-- `SkiNet/skills_tenet_localagi_runner_harness_plan_v0.3.md`
+- `SkiNet/SkiNet_plan_v0.035.md`
 
-Older plans:
-
-- `SkiNet/Prior/skills_tenet_localagi_runner_harness_plan_v0.1.md`
-- `SkiNet/Prior/skills_tenet_localagi_runner_harness_plan_v0.2.md`
-- `SkiNet/Prior/skills_tenet_runner_harness_plan_v0.0.md`
+Older plans are intentionally not retained as duplicate markdown files in the working tree; use git history for pre-v0.035 plan snapshots.
 
 Manual spike runbook:
 
@@ -172,13 +168,23 @@ The manual spike found three distinct facts:
 - Codex `danger-full-access` can run full Playwright proof, including the ordinary localhost path where Playwright starts Vite itself.
 - The new controller proof path, running from the normal shell, can run the tracer Playwright suite in safe/default mode on this host.
 
-Policy encoded in v0.3 and the controller:
+Policy encoded in v0.035 and the controller:
 
 - do not default to elevated proof mode;
 - probe each proof-runner host/image first;
 - use safe mode when it works;
 - escalate only for classified browser/listener sandbox failures and only when explicitly authorized;
 - record both safe and elevated attempts when escalation happens.
+
+### TDD enforcement
+
+v0.035 adds controller-owned TDD chronology:
+
+- `run-red-gate` must pass before `start-dev`;
+- RED evidence must prove expected failure for the current frozen tracer contract;
+- `run-green-gate` reruns the same focused contract after implementation;
+- Stage 13 preflight verifies the RED/GREEN artifacts exist and match the run;
+- Stage 15 audits chronology and test adequacy, including `tdd_chronology_gap`.
 
 ### Preview URLs
 
